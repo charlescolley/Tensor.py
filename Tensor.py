@@ -12,7 +12,8 @@
          a tuple with the shape of the tensor. The ith element of shape
          corresponds to the dimension of the ith mode.
       Public Methods:
-        save(folder_name)
+        save(folder_name, overwrite) UNTESTED
+        convert_slices(format)       UNTESTED
 --------------------------------------------------------------------------------
   Dependencies
 -----------------------------------------------------------------------------'''
@@ -31,18 +32,25 @@ class Tensor:
 
       #check for valid slice array
       slice_shape = slices[0].shape
-      for t,slice in enumerate(slice):
+      slice_type = slices[0].getformat()
+      for t,slice in enumerate(slices[1:],1):
         if slice.shape != slice_shape:
           raise ValueError("slices must all have the same shape, slice {} "
                            "has shape {}, but slice 0 has shape {}\n".
                            format(t,slice.shape,slice_shape))
-
+        if slice.getformat() != slice_type:
+          raise UserWarning("slice format {} is different from first slice, "
+                            "coverting to type {}, this may make "
+                            "initialization slow.\n pass in list of same type "
+                            "sparse matrix for faster initialization\n")
+          slices[t] = slice.asformat(slice_type)
 
       self._slices = slices
       self._shape = (slice_shape[0],slice_shape[1],len(slices))
     else:
       self._slices = []
       self._shape = (0,0,0)
+      self._slice_format = None
 
   '''---------------------------------------------------------------------------
     save(folder_name, overwrite)
@@ -108,3 +116,46 @@ class Tensor:
   def convert_slices(self,format):
     for t, slice in enumerate(self._slices):
       self._slices[t] = slice.asformat(format)
+
+  '''---------------------------------------------------------------------------
+      get_frontal_slice(t)
+        returns the t-th frontal slice. Paired with set_slice().
+      Input: 
+        t - (int)
+          index of the slice to return
+      Returns:
+        slice - (sparse scipy matrix)
+          the t-th slice
+  ---------------------------------------------------------------------------'''
+  def get_frontal_slice(self,t):
+    return self._slices[t]
+
+  '''---------------------------------------------------------------------------
+        get_frontal_slice(t)
+          replaces the t-th frontal slice. Paired with get_slice().
+        Input: 
+          t - (int)
+            index of the slice to replace. if t is larger than the third-mode 
+            dimension, sparse matrices of all zeros are added. 
+          slice - (sparse scipy matrix)
+            the new t-th slice
+    ---------------------------------------------------------------------------'''
+  def set_frontal_slice(self, t, slice):
+    n = self._shape[0]
+    m = self._shape[1]
+    if not sp.issparse(slice):
+      raise ValueError("slice is not a scipy sparse matrix, slice passed in "
+                       "is of type {}\n".format(type(slice)))
+    if slice.shape != (n,m):
+      raise ValueError("slice shape is invalid, slice must be of shape ({},"
+                       "{}), slice passed in is of shape {}\n",n,m,slice.shape)
+
+    if t > self._shape[3]:
+      for i in range(t - self._shape[3]-1):
+        self._slices.append(sp.random(n,m,density=0))
+      self._slices.append(slice)
+    else:
+      self._slices[t] = slice
+
+
+
