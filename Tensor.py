@@ -8,7 +8,7 @@
          a list of sparse scipy matrices which represents the frontal slices of
          the tensor, i.e. the t-th element of the list will be the matrix
          A[:,:,t]. All slices will be the same type of sparse matrix.
-        _shape - (tuple of ints)
+        shape - (tuple of ints)
          a tuple with the shape of the tensor. The ith element of shape
          corresponds to the dimension of the ith mode.
       Public Methods:
@@ -48,11 +48,11 @@ class Tensor:
           slices[t] = slice.asformat(slice_type)
 
       self._slices = slices
-      self._shape = (slice_shape[0],slice_shape[1],len(slices))
+      self.shape = (slice_shape[0],slice_shape[1],len(slices))
       self._slice_format = slice_format
     else:
       self._slices = []
-      self._shape = (0,0,0)
+      self.shape = (0, 0, 0)
       self._slice_format = None
 
   '''---------------------------------------------------------------------------
@@ -146,8 +146,8 @@ class Tensor:
   def set_frontal_slice(self, t, slice):
 
     #check for correct type
-    n = self._shape[0]
-    m = self._shape[1]
+    n = self.shape[0]
+    m = self.shape[1]
     if not sp.issparse(slice):
       raise ValueError("slice is not a scipy sparse matrix, slice passed in "
                        "is of type {}\n".format(type(slice)))
@@ -160,11 +160,11 @@ class Tensor:
         self._slice_format))
 
     #insert slice in
-    if t > self._shape[3]:
-      for i in range(t - self._shape[3]-1):
+    if t > self.shape[3]:
+      for i in range(t - self.shape[3]-1):
         self._slices.append(sp.random(n,m,density=0,format=self._slice_format))
       self._slices.append(slice)
-      self._shape = (n,m,t)
+      self.shape = (n,m,t)
     else:
       self._slices[t] = slice
 
