@@ -1,9 +1,13 @@
 import scipy.sparse as sp
 from Tensor import Tensor
 import pytest
-
-
 from random import randint
+
+
+'''-----------------------------------------------------------------------------
+                              constructor tests
+-----------------------------------------------------------------------------'''
+
 def test_empty_constructor():
   A = Tensor()
 
@@ -50,9 +54,13 @@ def test_inconsistent_matrix_type_constructor():
   slices.append(sp.random(n,m,format='dok'))
   slices.append(sp.random(n,m,format='csr'))
 
-  with pytest.warns(UserWarning, match = "slice format .*"):
+  with pytest.warns(RuntimeWarning, match = "slice format .*"):
     A = Tensor(slices)
 
+
+'''-----------------------------------------------------------------------------
+                              save/load tests
+-----------------------------------------------------------------------------'''
 
 '''
 def test_save_load():
@@ -64,6 +72,9 @@ def test_save_load():
   for t in range(T):
     slices.append(sp.random(n,m))
 '''
+'''-----------------------------------------------------------------------------
+                              transpose tests
+-----------------------------------------------------------------------------'''
 
 def test_transpose_in_place():
   slices = []
@@ -85,3 +96,108 @@ def test_transpose_in_place():
       assert (A._slices[t] - slices[0].T).nnz == 0
     else:
       assert (A._slices[t] - slices[:0:-1][t-1].T).nnz == 0
+
+'''-----------------------------------------------------------------------------
+                              get_scalar tests
+-----------------------------------------------------------------------------'''
+def test_working_get_scalar():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n, m, density=.5,format = 'dok'))
+
+  A = Tensor(slices)
+
+  for i in range(n):
+    for j in range(m):
+      for t in range(T):
+        assert A.get_scalar(i,j,t) == slices[t][i,j]
+
+def test_get_scalar_warnings():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n, m, density=.5))
+
+  A = Tensor(slices)
+
+  with pytest.warns(RuntimeWarning):
+    A.get_scalar(0,0,0)
+
+def test_get_scalar_errors():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n, m, density=.5))
+
+  A = Tensor(slices)
+
+  with pytest.raises(ValueError):
+    A.get_scalar(2 * n,2 *m,2 * T)
+    A.get_scalar(-2* n, -2 * m, -2 * T)
+
+'''-----------------------------------------------------------------------------
+                              set_scalar tests
+-----------------------------------------------------------------------------'''
+def test_working_set_scalar():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n, m, density=.5,format='dok'))
+
+  A = Tensor(slices)
+  rand_i = randint(0,n-1)
+  rand_j = randint(0,m-1)
+  rand_t = randint(0,T-1)
+  val = randint(0,1232)
+
+  A.set_scalar(rand_i,rand_j,rand_t,val)
+  assert A.get_scalar(rand_i,rand_j,rand_t) == val
+
+def test_set_scalar_warnings():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n, m, density=.5))
+  A = Tensor(slices)
+
+  with pytest.warns(RuntimeWarning):
+    A.set_scalar(0,0,0,3)
+
+def test_set_scalar_errors():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n, m, density=.5,format='dok'))
+
+  A = Tensor(slices)
+  with pytest.raises(TypeError):
+    A.set_scalar(0,0,0,[1,2,3])
+    A.set_scalar(0, 0, 0, "apples")
+    A.set_scalar(0,0,0,sp.random(3,2))
+
+
