@@ -137,7 +137,7 @@ class Tensor:
     return self._slices[t]
 
   '''---------------------------------------------------------------------------
-        get_frontal_slice(t)
+      get_frontal_slice(t)
           replaces the t-th frontal slice. Paired with get_slice().
         Input: 
           t - (int)
@@ -170,6 +170,92 @@ class Tensor:
       self.shape = (n,m,t)
     else:
       self._slices[t] = slice
+
+  '''---------------------------------------------------------------------------
+      set_scalar(i,j,k,scalar)
+          This function sets i,j,k element of the tensor to be the value 
+         passed as the scalar variable.Note that because COO matrices don't 
+         support assignment, the tensor must be converted. paired with the 
+         get_scalar function.
+      Input:
+        i - (integer)
+          The mode 1 index to insert the scalar
+        j - (integer)
+          The mode 2 index to insert the scalar
+        k - (integer)
+         The mode 3 index to insert the scalar
+        scalar - (scalar type)
+          The value to be inserted into the tensor, will be cast to the type 
+          of whatever type of matrix the slices are comprised of. 
+    TODO:
+     -figure out robust casting in python
+     -expand the tensor when the use passes an index out of range of the 
+      current  
+  ---------------------------------------------------------------------------'''
+  def set_scalar(self,i,j,k,scalar):
+    #can't assign elements to a coo matrix
+    if self._slices[0].format == 'coo':
+      raise Warning("Tensor slices are of type coo, which don't support index "
+                    "assignment, Tensor slices are being converted to dok.\n")
+      self.convert_slices('dok')
+
+    current_dtype = self.slices[k].dtype
+    if current_dtype != scalar.dtype:
+      if isinstance(scalar,Number):
+        scalar = (current_dtype) scalar
+        raise Warning("scalar not of type {} like the rest of slice {}, "
+                      "cast to type {} from {} if possible\n".
+                      format(current_dtype,k,current_dtype,scalar.dtype))
+      else:
+        raise TypeError("scalar must be a subclass of Number, scalar passed "
+                         "in is of type{}\n".format(scalar.dtype))
+    #check for bounds
+    if abs(i) < self.shape[0]:
+      raise ValueError("i index out of bounds, must be in the domain [-{},"
+                       "{}]".format(self.shape[0],self.shape[0]))
+    if abs(j) < self.shape[1]:
+      raise ValueError("j index out of bounds, must be in the domain [-{},"
+                       "{}]".format(self.shape[1],self.shape[1]))
+    if abs(k) < self.shape[2]:
+      raise ValueError("k index out of bounds, must be in the domain [-{},"
+                       "{}]".format(self.shape[2],self.shape[2]))
+
+    self._slices[k][i,j] = scalar
+
+  '''---------------------------------------------------------------------------
+      get_scalar(i,j,k)
+        This function gets the i,j,k element of the tensor. paired with the 
+        set_scalar function. 
+      Input:
+        i - (integer)
+          The mode 1 index to insert the scalar
+        j - (integer)
+          The mode 2 index to insert the scalar
+        k - (integer)
+         The mode 3 index to insert the scalar
+      Returns:
+        A[i,j,k] - (scalar number)
+          returns the value at the i,j element of the kth frontal slice. 
+  ---------------------------------------------------------------------------'''
+  def get_scalar(self,i,j,k):
+    #check bounds of i,j,k
+    if abs(i) < self.shape[0]:
+      raise ValueError("i index out of bounds, must be in the domain [-{},"
+                       "{}]".format(self.shape[0],self.shape[0]))
+    if abs(j) < self.shape[1]:
+      raise ValueError("j index out of bounds, must be in the domain [-{},"
+                       "{}]".format(self.shape[1],self.shape[1]))
+    if abs(k) < self.shape[2]:
+      raise ValueError("k index out of bounds, must be in the domain [-{},"
+                       "{}]".format(self.shape[2],self.shape[2]))
+
+    if self._slices.dtype == 'coo':
+      raise Warning("{}th slice is COO format, converting to dok to "
+                    "read value, please consider converting slices "
+                    "if multiple reads are needed.\n".format(k))
+      return self._slices[k].asformat('dok')[i,j]
+    else:
+      return self._slices[k][i,j]
 
   '''---------------------------------------------------------------------------
       transpose()
