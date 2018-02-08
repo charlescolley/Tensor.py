@@ -50,5 +50,38 @@ def test_inconsistent_matrix_type_constructor():
   slices.append(sp.random(n,m,format='dok'))
   slices.append(sp.random(n,m,format='csr'))
 
-  with pytest.warns(UserWarning,match= r'slice format.*'):
+  with pytest.warns(UserWarning, match = "slice format .*"):
     A = Tensor(slices)
+
+
+'''
+def test_save_load():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+  for t in range(T):
+    slices.append(sp.random(n,m))
+'''
+
+def test_transpose_in_place():
+  slices = []
+
+  T = 2
+  n = 10
+  m = 9
+
+  for t in range(T):
+    slices.append(sp.random(n,m,density=.5))
+
+  A = Tensor(slices)
+  A.transpose(InPlace=True)
+
+  assert A.shape == (m,n,T)
+
+  for t in range(T):
+    if t == 0:
+      assert (A._slices[t] - slices[0].T).nnz == 0
+    else:
+      assert (A._slices[t] - slices[:0:-1][t-1].T).nnz == 0
