@@ -13,7 +13,10 @@
          corresponds to the dimension of the ith mode.
       Public Methods:
         save(folder_name, overwrite) UNTESTED
+        load(
         convert_slices(format)       UNTESTED
+
+
 --------------------------------------------------------------------------------
   Dependencies
 -----------------------------------------------------------------------------'''
@@ -40,9 +43,9 @@ class Tensor:
                            format(t,slice.shape,slice_shape))
         if slice.getformat() != slice_format:
           raise UserWarning("slice format {} is different from first slice, "
-                            "coverting to format {}, this may make "
-                            "initialization slow.\n pass in list of same type "
-                            "sparse matrix for faster "
+                            "coverting to format {},\n this may make "
+                            "initialization slow. pass in list of same type "
+                            "sparse matrix for \nfaster "
                             "initialization\n".
                             format(slice.getformat(),slice_format))
           slices[t] = slice.asformat(slice_type)
@@ -142,7 +145,7 @@ class Tensor:
             dimension, sparse matrices of all zeros are added. 
           slice - (sparse scipy matrix)
             the new t-th slice
-    ---------------------------------------------------------------------------'''
+  ---------------------------------------------------------------------------'''
   def set_frontal_slice(self, t, slice):
 
     #check for correct type
@@ -168,5 +171,66 @@ class Tensor:
     else:
       self._slices[t] = slice
 
+  '''---------------------------------------------------------------------------
+      transpose()
+        creates a new instance a tensor class such that the frontal slices 
+        are transposed, and the 2nd through nth slices are flipped. Has the 
+        option of returning a new instance, or in place. 
+      Input:
+        InPlace - (optional bool)
+          A boolean indicating whether or not to alter the current tensor, 
+          or produce a new one. 
+      Return:
+        Tensor Instance
+          if InPlace is false, then this function returns a new tensor 
+          instance. 
+  ---------------------------------------------------------------------------'''
+  def transpose(self, InPlace = False):
+    if InPlace:
+      first_slice = self._slices[0].T
+      self._slices = map(lambda x: x.T, self._slices[:0:-1])
+      self._slices.insert(0,first_slice)
+      self.shape = (self.shape[1],self.shape[0],self.shape[2])
+    else:
+      new_slices = map(lambda x: x.T, self._slices[:0:-1])
+      new_slices.insert(0,self._slices[0].T)
+      return Tensor(new_slices)
+
+  '''---------------------------------------------------------------------------
+     t_product(B)
+         This function takes in another tensor instance and computes the 
+       t-product of the two through the block circulant definition of the 
+       operation. 
+     Input:
+       B - (Tensor Instance)
+         the mode-2 and mode -3 dimensions of the current instance of a tensor 
+         must equal the mode 1 and mode 3 dimensions of B. 
+     Returns: 
+       Tensor Instance
+         Returns a new Tensor which represents the t-product of the current 
+         Tensor and B. 
+     Notes:
+       Develop future support for  
+  ---------------------------------------------------------------------------'''
+  def t_product(self,B):
+
+    #TODO: check for tensor object
+
+    #check dimensions of B
+    if self.shape[1] != B.shape[0] or self.shape[2] != B.shape[2]:
+      raise ValueError("input Tensor B invalid shape {}, mode 1 "
+                       "dimension and mode 3 dimension must be equal to {} "
+                       "and {} respectively"
+                       "".format(B.shape,self.shape[1], self.shape[2]))
+    T = self.shape[2]
+
+    new_slices = []
+    for i in xrange(T):
+      new_slice = sp.random(self.shape[0],B.shape[1],density=0)
+      for j in xrange(T):
+        new_slice += self._slices[(i+(T - j))%T] * B._slices[j]
+      new_slices.append(new_slice)
+
+    return Tensor(new_slices)
 
 
