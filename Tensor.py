@@ -22,7 +22,8 @@
 -----------------------------------------------------------------------------'''
 import os
 import scipy.sparse as sp
-
+from warnings import warns
+from numbers import Number
 
 '''--------------------------------------------------------------------------'''
 
@@ -42,13 +43,14 @@ class Tensor:
                            "has shape {}, but slice 0 has shape {}\n".
                            format(t,slice.shape,slice_shape))
         if slice.getformat() != slice_format:
-          raise UserWarning("slice format {} is different from first slice, "
+          warn("slice format {} is different from first slice, "
                             "coverting to format {},\n this may make "
                             "initialization slow. pass in list of same type "
                             "sparse matrix for \nfaster "
                             "initialization\n".
-                            format(slice.getformat(),slice_format))
-          slices[t] = slice.asformat(slice_type)
+                            format(slice.getformat(),slice_format),
+                        RuntimeWarning)
+          slices[t] = slice.asformat(slice_format)
 
       self._slices = slices
       self.shape = (slice_shape[0],slice_shape[1],len(slices))
@@ -155,12 +157,14 @@ class Tensor:
       raise ValueError("slice is not a scipy sparse matrix, slice passed in "
                        "is of type {}\n".format(type(slice)))
     if slice.shape != (n,m):
-      raise ValueError("slice shape is invalid, slice must be of shape ({},"
+      raise ValueError("slice shape is invalid, slice must be of "
+                               "shape ({},"
                        "{}), slice passed in is of shape {}\n",n,m,slice.shape)
 
     if slice.getformat() != self._slice_format:
-      raise UserWarning("converting frontal slice to format {}\n".format(
-        self._slice_format))
+      warn("converting frontal slice to format {}\n".
+                      format(self._slice_format),
+                    UserWarning)
 
     #insert slice in
     if t > self.shape[3]:
@@ -195,28 +199,22 @@ class Tensor:
   def set_scalar(self,i,j,k,scalar):
     #can't assign elements to a coo matrix
     if self._slices[0].format == 'coo':
-      raise Warning("Tensor slices are of type coo, which don't support index "
-                    "assignment, Tensor slices are being converted to dok.\n")
+      warn("Tensor slices are of type coo, which don't support index "
+                    "assignment, Tensor slices are being converted to dok.\n",
+                    RuntimeWarning)
       self.convert_slices('dok')
 
-    current_dtype = self.slices[k].dtype
-    if current_dtype != scalar.dtype:
-      if isinstance(scalar,Number):
-        scalar = (current_dtype) scalar
-        raise Warning("scalar not of type {} like the rest of slice {}, "
-                      "cast to type {} from {} if possible\n".
-                      format(current_dtype,k,current_dtype,scalar.dtype))
-      else:
-        raise TypeError("scalar must be a subclass of Number, scalar passed "
-                         "in is of type{}\n".format(scalar.dtype))
+    if not isinstance(scalar,Number):
+      raise TypeError("scalar must be a subclass of Number, scalar passed "
+                      "in is of type{}\n".format(type(scalar)))
     #check for bounds
-    if abs(i) < self.shape[0]:
+    if abs(i) > self.shape[0]:
       raise ValueError("i index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[0],self.shape[0]))
-    if abs(j) < self.shape[1]:
+    if abs(j) > self.shape[1]:
       raise ValueError("j index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[1],self.shape[1]))
-    if abs(k) < self.shape[2]:
+    if abs(k) > self.shape[2]:
       raise ValueError("k index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[2],self.shape[2]))
 
@@ -239,20 +237,20 @@ class Tensor:
   ---------------------------------------------------------------------------'''
   def get_scalar(self,i,j,k):
     #check bounds of i,j,k
-    if abs(i) < self.shape[0]:
+    if abs(i) > self.shape[0]:
       raise ValueError("i index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[0],self.shape[0]))
-    if abs(j) < self.shape[1]:
+    if abs(j) > self.shape[1]:
       raise ValueError("j index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[1],self.shape[1]))
-    if abs(k) < self.shape[2]:
+    if abs(k) > self.shape[2]:
       raise ValueError("k index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[2],self.shape[2]))
 
-    if self._slices.dtype == 'coo':
-      raise Warning("{}th slice is COO format, converting to dok to "
-                    "read value, please consider converting slices "
-                    "if multiple reads are needed.\n".format(k))
+    if self._slices[0].format == 'coo':
+      warn("{}th slice is COO format, converting to dok to read value, "
+           "please consider converting slices if multiple reads are needed."
+           "\n".format(k),RuntimeWarning)
       return self._slices[k].asformat('dok')[i,j]
     else:
       return self._slices[k][i,j]
@@ -281,6 +279,58 @@ class Tensor:
       new_slices = map(lambda x: x.T, self._slices[:0:-1])
       new_slices.insert(0,self._slices[0].T)
       return Tensor(new_slices)
+
+  '''---------------------------------------------------------------------------
+     squeeze()
+       This function takes in either an n x m matrix and will return a 
+       (n x 1 x m) Tensor. This corresponds to thinking of the matrix as a 
+       frontal slice, and having the function return it as a lateral slice. 
+       Note that if no matrix is passed in, then this function will apply the
+       squeeze function to each one of the frontal slices of the current 
+       instance of the tensor. Note that this function is paired with the 
+       twist function as an inverse i.e.   
+                            X = twist(squeeze(X))
+     Input:
+       X - (optional n x m sparse matrix)
+         A sparse matrix to be squeezed. Note if none is passed in, then each 
+         frontal slice in self._slices will be squeezed and the instance of 
+         the Tensor calling this function will be altered. 
+     Returns:
+       Z - (n x 1 x m Tensor)
+         A tensor corresponding to a single lateral slice. Doesn't return 
+         anything if no X is passed in. 
+  ---------------------------------------------------------------------------'''
+  def squeeze(self, X= None):
+    if X:
+      if sp.issparse(X):
+        n = X.shape[0]
+        m = X.shape[1]
+
+        if X.format == 'coo':
+          X = X.asformat('dok')
+        slices = []
+        for i in range(m):
+          slices.append(X[:,i])
+        return Tensor(slices)
+      else:
+        raise TypeError("X passed in not a sparse matrix, X is of type {"
+                        "}\n".format(type(X)))
+    else:
+      #build new slices
+      new_slices = []
+      (n,m,T) = self.shape
+      for i in range(m):
+        new_slices.append(sp.random(n,T,density=0,format='dok'))
+
+      #populate them
+      for (t,slice) in enumerate(self._slices):
+        for ((i,j),val) in slice.iteritems():
+          new_slices[j][i,t] = val
+
+      self._slices = new_slices
+      self.shape = (n,T,m)
+      self._slice_format = 'dok'
+
 
   '''---------------------------------------------------------------------------
      t_product(B)
