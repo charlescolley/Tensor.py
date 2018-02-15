@@ -18,8 +18,8 @@
         save(folder_name, overwrite) UNTESTED
         load(
         convert_slices(format)
-        set_frontal_slice            UNTESTED
-        get_front_slice              UNTESTED
+        set_frontal_slice
+        get_front_slice
         set_scalar
         get_scalar
         transpose
@@ -57,7 +57,7 @@ class Tensor:
 
   def __init__(self, slices = None):
 
-    if slices:
+    if slices is not None:
 
       #check for valid slice array
       slice_shape = slices[0].shape
@@ -207,7 +207,7 @@ class Tensor:
     n = self.shape[0]
     m = self.shape[1]
     if not sp.issparse(slice):
-      raise ValueError("slice is not a scipy sparse matrix, slice passed in "
+      raise TypeError("slice is not a scipy sparse matrix, slice passed in "
                        "is of type {}\n".format(type(slice)))
     if slice.shape != (n,m):
       raise ValueError("slice shape is invalid, slice must be of "
@@ -220,8 +220,8 @@ class Tensor:
                     UserWarning)
 
     #insert slice in
-    if t > self.shape[3]:
-      for i in range(t - self.shape[3]-1):
+    if t > self.shape[2]:
+      for i in range(t - self.shape[2]-1):
         self._slices.append(sp.random(n,m,density=0,format=self._slice_format))
       self._slices.append(slice)
       self.shape = (n,m,t)
@@ -354,8 +354,8 @@ class Tensor:
          A tensor corresponding to a single lateral slice. Doesn't return 
          anything if no X is passed in. 
   ---------------------------------------------------------------------------'''
-  def squeeze(self, X= None):
-    if X:
+  def squeeze(self, X = None):
+    if X is not None:
       if sp.issparse(X):
         n = X.shape[0]
         m = X.shape[1]
@@ -404,7 +404,7 @@ class Tensor:
          a sparse matrix corresponding to the lateral slice 
   ---------------------------------------------------------------------------'''
   def twist(self, X = None):
-    if X:
+    if X is not None:
       if not isinstance(X,Tensor):
         raise TypeError("X is not a member of the Tensor class, X is of type "
                         "{}".format(type(X)))
