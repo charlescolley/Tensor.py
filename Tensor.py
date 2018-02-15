@@ -17,18 +17,31 @@
       Public Methods:
         save(folder_name, overwrite) UNTESTED
         load(
-        convert_slices(format)       UNTESTED
-        set_frontal_slice
-        get_front_slice
+        convert_slices(format)
+        set_frontal_slice            UNTESTED
+        get_front_slice              UNTESTED
         set_scalar
         get_scalar
         transpose
-        squeeze
-        twist
-        t-product
+        squeeze                      UNTESTED
+        twist                        UNTESTED
+        t-product                    UNTESTED
+        scale_tensor                 UNTESTED
+      Overloaded Methods:
+        __add__                      UNTESTED
+        __mul__                      UNTESTED
+        __neg__                      UNTESTED
 
 
-
+  TODO: -update constructor to take in a file path
+        -change save function make one big flattened matrix and save that
+          scipy file
+        -write random Tensor
+        -write load to handle the flattened tensor save
+        -write indexing functions
+        -write print overloading
+        -write add overloading
+        -write todense function
 --------------------------------------------------------------------------------
   Dependencies
 -----------------------------------------------------------------------------'''
@@ -71,6 +84,33 @@ class Tensor:
       self._slices = []
       self.shape = (0, 0, 0)
       self._slice_format = None
+
+  def __mul__(self, other):
+
+    if isinstance(other, Tensor):
+      return self.t_product(other)
+    elif isinstance(other, Number):
+      return self.scale_tensor(other)
+    else:
+      raise TypeError("{} is not a subclass of Number, or a Tensor instance,\n "
+                      "parameter is of type {}\n".format(other,type(other)))
+
+  def __add__(self, other):
+    if isinstance(other,Tensor):
+      #check dimensions
+      if self.shape != other.shape:
+        raise ValueError("invalid shape, input tensor must be of shape {}, \n"
+                         "input tensor is of shape {}.\n".format(self.shape,
+                                                                 other.shape))
+      else:
+        return Tensor(map(lambda (x,y): x + y, zip(self._slices,other._slices)))
+    else:
+      raise TypeError("input {} passed in is not an instance of a Tensor, "
+                      "parameter passed in is of type {}".
+                      format(other, type(other)))
+
+    def __neg__(self):
+      return self.scale_tensor(-1)
 
   '''---------------------------------------------------------------------------
     save(folder_name, overwrite)
@@ -136,6 +176,7 @@ class Tensor:
   def convert_slices(self,format):
     for t, slice in enumerate(self._slices):
       self._slices[t] = slice.asformat(format)
+    self._slice_format = format
 
   '''---------------------------------------------------------------------------
       get_frontal_slice(t)
@@ -281,7 +322,7 @@ class Tensor:
           instance. 
   ---------------------------------------------------------------------------'''
   def transpose(self, inPlace = False):
-    if InPlace:
+    if inPlace:
       first_slice = self._slices[0].T
       self._slices = map(lambda x: x.T, self._slices[:0:-1])
       self._slices.insert(0,first_slice)
@@ -412,6 +453,17 @@ class Tensor:
     return Tensor(new_slices)
 
   '''---------------------------------------------------------------------------
+     zeros(shape)
+         This function takes in a tuple indicating the size, and a dtype 
+       string compatible with scipy's data types and returns a Tensor instance 
+       corresponding to shape passed in filled with all zeros.
+  ---------------------------------------------------------------------------'''
+  def zeros(self,shape, dtype = None):
+    print "balh"
+
+
+
+  '''---------------------------------------------------------------------------
      scale_tensor(scalar, inPlace)
        This function takes in a scalar value and either returns a Tensor 
        scaled by a scalar in the field or scales the tensor in question in 
@@ -434,11 +486,6 @@ class Tensor:
       else:
         return Tensor(map(lambda x: scalar *x, self._slices))
 
-  def __mul__(self, other):
 
-    if isinstance(other, Tensor):
-      return self.t_product(other)
-    elif isinstance(other, Number):
-      return self.scale_tensor(other)
 
 
