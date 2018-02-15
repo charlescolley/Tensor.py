@@ -57,6 +57,55 @@ def test_inconsistent_matrix_type_constructor():
   with pytest.warns(RuntimeWarning, match = "slice format .*"):
     A = Tensor(slices)
 
+'''-----------------------------------------------------------------------------
+                             convert slices test
+-----------------------------------------------------------------------------'''
+def test_convert_slices():
+  n = 5
+  m = 7
+  T = 5
+  slices = []
+  for t in range(T):
+    slices.append(sp.random(n,m))
+
+  A = Tensor(slices)
+  A.convert_slices('dok')
+
+  assert A._slice_format == 'dok'
+  for t in range(T):
+    assert A._slices[t].format == 'dok'
+
+'''-----------------------------------------------------------------------------
+                            get/set slices tests
+-----------------------------------------------------------------------------'''
+def test_get_frontal_slice():
+  n = 5
+  m = 7
+  T = 5
+  slices = []
+  for t in range(T):
+    slices.append(sp.random(n,m))
+  A = Tensor(slices)
+
+  for t in range(T):
+    assert (A.get_frontal_slice(t) - slices[t]).nnz == 0
+
+def test_get_frontal_slice():
+  n = 5
+  m = 7
+  T = 5
+  slices = []
+  for t in range(T):
+    slices.append(sp.random(n,m))
+  A = Tensor(slices)
+
+  for t in range(T):
+    assert (A.get_frontal_slice(t) - slices[t]).nnz == 0
+
+
+
+
+
 
 '''-----------------------------------------------------------------------------
                               save/load tests
@@ -87,7 +136,7 @@ def test_transpose_in_place():
     slices.append(sp.random(n,m,density=.5))
 
   A = Tensor(slices)
-  A.transpose(InPlace=True)
+  A.transpose(inPlace=True)
 
   assert A.shape == (m,n,T)
 
@@ -201,3 +250,11 @@ def test_set_scalar_errors():
     A.set_scalar(0,0,0,sp.random(3,2))
 
 
+'''-----------------------------------------------------------------------------
+                              squeeze tests
+-----------------------------------------------------------------------------'''
+def test_squeeze_passed_in_slice():
+  n = 10
+  m = 9
+
+  X = sp.random(n,m,format='dok')
