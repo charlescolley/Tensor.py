@@ -8,6 +8,9 @@
          a list of sparse scipy matrices which represents the frontal slices of
          the tensor, i.e. the t-th element of the list will be the matrix
          A[:,:,t]. All slices will be the same type of sparse matrix.
+        _slice_format - (string)
+         a string indicating the sparse matrix format of each of the frontal
+         slices in the tensor.
         shape - (tuple of ints)
          a tuple with the shape of the tensor. The ith element of shape
          corresponds to the dimension of the ith mode.
@@ -15,6 +18,15 @@
         save(folder_name, overwrite) UNTESTED
         load(
         convert_slices(format)       UNTESTED
+        set_frontal_slice
+        get_front_slice
+        set_scalar
+        get_scalar
+        transpose
+        squeeze
+        twist
+        t-product
+
 
 
 --------------------------------------------------------------------------------
@@ -22,7 +34,7 @@
 -----------------------------------------------------------------------------'''
 import os
 import scipy.sparse as sp
-from warnings import warns
+from warnings import warn
 from numbers import Number
 
 '''--------------------------------------------------------------------------'''
@@ -192,7 +204,6 @@ class Tensor:
           The value to be inserted into the tensor, will be cast to the type 
           of whatever type of matrix the slices are comprised of. 
     TODO:
-     -figure out robust casting in python
      -expand the tensor when the use passes an index out of range of the 
       current  
   ---------------------------------------------------------------------------'''
@@ -256,7 +267,7 @@ class Tensor:
       return self._slices[k][i,j]
 
   '''---------------------------------------------------------------------------
-      transpose()
+      transpose(inPlace)
         creates a new instance a tensor class such that the frontal slices 
         are transposed, and the 2nd through nth slices are flipped. Has the 
         option of returning a new instance, or in place. 
@@ -269,7 +280,7 @@ class Tensor:
           if InPlace is false, then this function returns a new tensor 
           instance. 
   ---------------------------------------------------------------------------'''
-  def transpose(self, InPlace = False):
+  def transpose(self, inPlace = False):
     if InPlace:
       first_slice = self._slices[0].T
       self._slices = map(lambda x: x.T, self._slices[:0:-1])
@@ -290,6 +301,8 @@ class Tensor:
        instance of the tensor. Note that this function is paired with the 
        twist function as an inverse i.e.   
                             X = twist(squeeze(X))
+       It should be noted that X will be a dok sparse matrix after the 
+       functio calls. 
      Input:
        X - (optional n x m sparse matrix)
          A sparse matrix to be squeezed. Note if none is passed in, then each 
@@ -331,6 +344,35 @@ class Tensor:
       self.shape = (n,T,m)
       self._slice_format = 'dok'
 
+  '''---------------------------------------------------------------------------
+     twist(X)
+       This function takes in an optional n x 1 x m tensor X and returns a 
+       sparse n x m matrix corresponding to rotating the lateral slice to a 
+       frontal slice. If no tensor is passed in, the algorithm is run on each of
+       frontal slices of the tensor this routine is being called on. Note 
+       that this is the inverse function of the squeeze function, i.e. 
+                            X = squeeze(twist(X))
+     Input:
+       X - (optional n x 1 x m Tensor)
+         This is a lateral slice to be converted to a sparse matrix. Note 
+         that if no tensor is passed in, then the routine is run on each of 
+         the frontal slices of the current instance of the Tensor the 
+         function is called on. 
+     Returns:
+       Z - (sparse dok matrix)
+         a sparse matrix corresponding to the lateral slice 
+  ---------------------------------------------------------------------------'''
+  def twist(self, X = None):
+    if X:
+      if not isinstance(X,Tensor):
+        raise TypeError("X is not a member of the Tensor class, X is of type "
+                        "{}".format(type(X)))
+      elif X.shape[1] != 1:
+        raise ValueError("X is not a lateral slice as the mode-2 dimension is {}"
+                         " not 1,\n if you wish to twist this tensor, "
+                         "call twist() on that instance".format(X.shape[1]))
+      else:
+        Z = sp.random(X.shape[0],X.shape[2],format='dok',density=0)
 
   '''---------------------------------------------------------------------------
      t_product(B)
@@ -368,5 +410,35 @@ class Tensor:
       new_slices.append(new_slice)
 
     return Tensor(new_slices)
+
+  '''---------------------------------------------------------------------------
+     scale_tensor(scalar, inPlace)
+       This function takes in a scalar value and either returns a Tensor 
+       scaled by a scalar in the field or scales the tensor in question in 
+       place and returns nothing. 
+     Input: 
+       scalar - (subclass of Number)
+         must be a scalar value of a field, will be applied to each of the 
+         tensor slices. 
+       inPlace - (optional bool)
+         a bool indicating whether or not the tensor this function is called 
+         on should be scaled, or whether it should return a new tensor. 
+  ---------------------------------------------------------------------------'''
+  def scale_tensor(self,scalar, inPlace = False):
+    if not isinstance(scalar, Number):
+      raise TypeError("{} is not a subclass of a Number, value passed in is "
+                      "of type {}\n".format(scalar,type(scalar)))
+    else:
+      if inPlace:
+        self._slices = map(lambda x: scalar *x, self._slices)
+      else:
+        return Tensor(map(lambda x: scalar *x, self._slices))
+
+  def __mul__(self, other):
+
+    if isinstance(other, Tensor):
+      return self.t_product(other)
+    elif isinstance(other, Number):
+      return self.scale_tensor(other)
 
 
