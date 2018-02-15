@@ -90,7 +90,7 @@ def test_get_frontal_slice():
   for t in range(T):
     assert (A.get_frontal_slice(t) - slices[t]).nnz == 0
 
-def test_get_frontal_slice():
+def test_working_get_frontal_slice():
   n = 5
   m = 7
   T = 5
@@ -99,12 +99,52 @@ def test_get_frontal_slice():
     slices.append(sp.random(n,m))
   A = Tensor(slices)
 
+  new_X = sp.random(n,m)
+  randT = randint(0,T-1)
+  A.set_frontal_slice(randT,new_X)
+  assert (A.get_frontal_slice(randT) - new_X).nnz == 0
+
+def test_get_frontal_slice_errors_and_warnings():
+  n = 5
+  m = 7
+  T = 5
+  slices = []
   for t in range(T):
-    assert (A.get_frontal_slice(t) - slices[t]).nnz == 0
+    slices.append(sp.random(n, m))
+  A = Tensor(slices)
 
+  #non-sparse matrix errors
+  with pytest.raises(TypeError):
+    A.set_frontal_slice(0,'apple')
+    A.set_frontal_slice(0,4)
 
+  #wrong shape
+  with pytest.raises(ValueError):
+    A.set_frontal_slice(0,sp.random(n+1,m+1))
 
+  #warn about wrong type
+  with pytest.warns(UserWarning):
+    A.set_frontal_slice(0,sp.random(n,m,format='lil'))
 
+def test_expanding_tensor():
+  n = 5
+  m = 7
+  T = 5
+  k = 2
+  slices = []
+  for t in range(T):
+    slices.append(sp.random(n,m))
+
+  A = Tensor(slices)
+  new_slice = sp.random(n,m)
+  A.set_frontal_slice(T+2,new_slice)
+
+  assert A.shape == (n,m,T+k)
+  for t in range(T,T+k):
+    if t == T+k -1:
+      assert (A.get_frontal_slice(t) - new_slice).nnz == 0
+    else:
+      assert (A.get_frontal_slice(t)).nnz == 0
 
 
 '''-----------------------------------------------------------------------------
