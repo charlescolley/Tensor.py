@@ -1,5 +1,7 @@
 import scipy.sparse as sp
+import numpy as np
 from Tensor import Tensor
+import Tensor as Te
 import pytest
 from random import randint, uniform
 
@@ -268,3 +270,37 @@ def test_scale_tensor_errors():
   with pytest.raises(TypeError):
     A.scale_tensor([1,2,3])
     A.scale_tensor('apples',inPlace=True)
+
+'''-----------------------------------------------------------------------------
+                              scale tensor tests
+-----------------------------------------------------------------------------'''
+def test_zeros():
+  Z1 = Te.zeros((N, M, T))
+  Z2 = Te.zeros([N, M, T])
+  Z3 = Te.zeros([N, M, T], format = 'dok')
+  Z4 = Te.zeros((N, M, T), format='lil')
+
+  for t in range(T):
+    assert Z1.get_frontal_slice(t).nnz == 0
+    assert Z2.get_frontal_slice(t).nnz == 0
+    assert Z3.get_frontal_slice(t).nnz == 0
+    assert Z4.get_frontal_slice(t).nnz == 0
+
+def test_zeros_errors():
+
+  #check for invalid tuple and list sizes
+  with pytest.raises(ValueError):
+    Te.zeros([N,M])
+    Te.zeros((N,M))
+    Te.zeros([N, M,T,5])
+    Te.zeros((N, M,T,5))
+
+  #check for invalid format
+  with pytest.raises(AttributeError):
+    Te.zeros([2,3,4],format='apple')
+
+  #check for invalid shape types
+  with pytest.raises(TypeError):
+    Te.zeros([1,2,'apple'])
+    Te.zeros(['apple',2,3])
+    Te.zeros([1, 'apple',3])
