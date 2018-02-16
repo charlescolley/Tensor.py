@@ -26,12 +26,14 @@
         squeeze                      UNTESTED
         twist                        UNTESTED
         t-product                    UNTESTED
-        scale_tensor                 UNTESTED
+        scale_tensor
       Overloaded Methods:
         __add__                      UNTESTED
         __mul__                      UNTESTED
         __neg__                      UNTESTED
 
+    Class utilization
+      zeros                          UNTESTED
 
   TODO: -update constructor to take in a file path
         -change save function make one big flattened matrix and save that
@@ -453,17 +455,6 @@ class Tensor:
     return Tensor(new_slices)
 
   '''---------------------------------------------------------------------------
-     zeros(shape)
-         This function takes in a tuple indicating the size, and a dtype 
-       string compatible with scipy's data types and returns a Tensor instance 
-       corresponding to shape passed in filled with all zeros.
-  ---------------------------------------------------------------------------'''
-  def zeros(self,shape, dtype = None):
-    print "balh"
-
-
-
-  '''---------------------------------------------------------------------------
      scale_tensor(scalar, inPlace)
        This function takes in a scalar value and either returns a Tensor 
        scaled by a scalar in the field or scales the tensor in question in 
@@ -489,3 +480,59 @@ class Tensor:
 
 
 
+'''-----------------------------------------------------------------------------
+                              NON-CLASS FUNCTIONS
+-----------------------------------------------------------------------------'''
+
+'''-----------------------------------------------------------------------------
+  zeros(shape)
+      This function takes in a tuple indicating the size, and a dtype 
+    string compatible with scipy's data types and returns a Tensor instance 
+    corresponding to shape passed in filled with all zeros.
+  Input:
+    shape - (list or tuple of ints)
+      a list or tuple with the dimensions of each of the 3 modes. must be of 
+      length 3. 
+    dtype - (dtype)
+      a datatype consistent with numpy datatype standards
+    format - (string)
+      the format of the sparse matrices to produce, default is COO. 
+  Returns:
+    Zero_Tensor - (Tensor Instance)
+      an instance of a Tensor of the appropriate dimensions with all zeros. 
+-----------------------------------------------------------------------------'''
+def zeros(shape, dtype = None,format = 'coo'):
+  if isinstance(shape,list) or isinstance(shape, tuple):
+    if len(shape) == 3:
+      for i in range(3):
+        if not isinstance(shape[i],int):
+          raise ValueError("mode {} dimension must be an integer,\n dimension "
+                           "passed in is of type {}\n".format(i,type(i)))
+      slices = []
+      for t in range(shape[2]):
+        sp.random(shape[0],shape[1],density=0,format=format,dtype=dtype)
+      return Tensor(slices)
+    else:
+      raise ValueError("shape must be of length 3.\n")
+
+'''-----------------------------------------------------------------------------
+  random(shape)
+      This function takes in a tuple indicating the size, and a dtype 
+    string compatible with scipy's data types and returns a Tensor instance 
+    corresponding to shape passed in filled with all zeros.
+  Input:
+    shape - (list or tuple of ints)
+      a list or tuple with the dimensions of each of the 3 modes. must be of 
+      length 3. 
+    dtype - (dtype)
+      a datatype consistent with scipy sparse datatype standards
+    format - (string)
+      the format of the sparse matrices to produce, default is COO. 
+    random_state - (int)
+      an integer which is passed in as a seed for each of the slices. Each 
+      slice will increment the seed value by 1, so each slice will have a 
+      unique seed. 
+  Returns:
+    Zero_Tensor - (Tensor Instance)
+      an instance of a Tensor of the appropriate dimensions with all zeros. 
+-----------------------------------------------------------------------------'''
