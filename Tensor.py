@@ -426,6 +426,9 @@ class Tensor:
        B - (Tensor Instance)
          the mode-2 and mode -3 dimensions of the current instance of a tensor 
          must equal the mode 1 and mode 3 dimensions of B. 
+       transpose - (optional bool)
+         a boolean indicating whether or not to transpose the tensor being 
+         called upon before applying the t-product.
      Returns: 
        Tensor Instance
          Returns a new Tensor which represents the t-product of the current 
@@ -433,7 +436,7 @@ class Tensor:
      Notes:
        Develop future support for  
   ---------------------------------------------------------------------------'''
-  def t_product(self,B):
+  def t_product(self,B,transpose = False):
 
     #TODO: check for tensor object
 
@@ -449,7 +452,10 @@ class Tensor:
     for i in xrange(T):
       new_slice = sp.random(self.shape[0],B.shape[1],density=0)
       for j in xrange(T):
-        new_slice += self._slices[(i+(T - j))%T] * B._slices[j]
+        if tranpose:
+          new_slice += self._slices[(j + (T - i))%T].T * B._slices[j]
+        else:
+          new_slice += self._slices[(i + (T - j))%T] * B._slices[j]
       new_slices.append(new_slice)
 
     return Tensor(new_slices)
@@ -493,8 +499,6 @@ class Tensor:
     shape - (list or tuple of ints)
       a list or tuple with the dimensions of each of the 3 modes. must be of 
       length 3. 
-    dtype - (dtype)
-      a datatype consistent with numpy datatype standards
     format - (string)
       the format of the sparse matrices to produce, default is COO. 
   Returns:
@@ -506,11 +510,11 @@ def zeros(shape, dtype = None,format = 'coo'):
     if len(shape) == 3:
       for i in range(3):
         if not isinstance(shape[i],int):
-          raise ValueError("mode {} dimension must be an integer,\n dimension "
+          raise TypeError("mode {} dimension must be an integer,\n dimension "
                            "passed in is of type {}\n".format(i,type(i)))
       slices = []
       for t in range(shape[2]):
-        sp.random(shape[0],shape[1],density=0,format=format,dtype=dtype)
+        slices.append(sp.random(shape[0],shape[1],density=0,format=format))
       return Tensor(slices)
     else:
       raise ValueError("shape must be of length 3.\n")
