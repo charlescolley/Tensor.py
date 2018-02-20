@@ -42,8 +42,8 @@
         -write load to handle the flattened tensor save
         -write indexing functions
         -write print overloading
-        -write add overloading
         -write todense function
+        -squeeze needs to handle different kind of sparse matrices
 --------------------------------------------------------------------------------
   Dependencies
 -----------------------------------------------------------------------------'''
@@ -372,6 +372,12 @@ class Tensor:
         raise TypeError("X passed in not a sparse matrix, X is of type {"
                         "}\n".format(type(X)))
     else:
+      #check format
+      if self._slice_format == 'coo':
+        warn("internally converting from coo to dok format, " \
+                            "may degrade performance\n",RuntimeWarning)
+        self.convert_slices('dok')
+
       #build new slices
       new_slices = []
       (n,m,T) = self.shape
@@ -439,26 +445,39 @@ class Tensor:
   def t_product(self,B,transpose = False):
 
     #TODO: check for tensor object
+    if isinstance(B, Tensor):
+      #check dimensions of B
+      if transpose:
+        if self.shape[0] != B.shape[0] or self.shape[2] != B.shape[2]:
+          raise ValueError("input Tensor B invalid shape {},\n mode 1 "
+                           "dimension and mode 3 dimension must be equal to {} "
+                           "and {} respectively"
+                           "".format(B.shape, self.shape[0], self.shape[2]))
+      else:
+        if self.shape[1] != B.shape[0] or self.shape[2] != B.shape[2]:
+          raise ValueError("input Tensor B invalid shape {},\n mode 1 "
+                           "dimension and mode 3 dimension must be equal to {} "
+                           "and {} respectively"
+                           "".format(B.shape,self.shape[1], self.shape[2]))
+      T = self.shape[2]
 
-    #check dimensions of B
-    if self.shape[1] != B.shape[0] or self.shape[2] != B.shape[2]:
-      raise ValueError("input Tensor B invalid shape {}, mode 1 "
-                       "dimension and mode 3 dimension must be equal to {} "
-                       "and {} respectively"
-                       "".format(B.shape,self.shape[1], self.shape[2]))
-    T = self.shape[2]
-
-    new_slices = []
-    for i in xrange(T):
-      new_slice = sp.random(self.shape[0],B.shape[1],density=0)
-      for j in xrange(T):
-        if tranpose:
-          new_slice += self._slices[(j + (T - i))%T].T * B._slices[j]
+      new_slices = []
+      for i in xrange(T):
+        if transpose:
+          new_slice = sp.random(self.shape[1], B.shape[1], density=0)
         else:
-          new_slice += self._slices[(i + (T - j))%T] * B._slices[j]
-      new_slices.append(new_slice)
+          new_slice = sp.random(self.shape[0],B.shape[1],density=0)
+        for j in xrange(T):
+          if transpose:
+            new_slice += self._slices[(j + (T - i))%T].T * B._slices[j]
+          else:
+            new_slice += self._slices[(i + (T - j))%T] * B._slices[j]
+        new_slices.append(new_slice)
 
-    return Tensor(new_slices)
+      return Tensor(new_slices)
+    else:
+      raise TypeError("B must be a Tensor instance, input is of type {"
+                      "}".format(type(B)))
 
   '''---------------------------------------------------------------------------
      scale_tensor(scalar, inPlace)
@@ -523,7 +542,7 @@ def zeros(shape, dtype = None,format = 'coo'):
   random(shape)
       This function takes in a tuple indicating the size, and a dtype 
     string compatible with scipy's data types and returns a Tensor instance 
-    corresponding to shape passed in filled with all zeros.
+    corresponding to shape passed of a given density, .
   Input:
     shape - (list or tuple of ints)
       a list or tuple with the dimensions of each of the 3 modes. must be of 
@@ -531,7 +550,7 @@ def zeros(shape, dtype = None,format = 'coo'):
     dtype - (dtype)
       a datatype consistent with scipy sparse datatype standards
     format - (string)
-      the format of the sparse matrices to produce, default is COO. 
+      the format of the sparse matrices to produce, default is COO.
     random_state - (int)
       an integer which is passed in as a seed for each of the slices. Each 
       slice will increment the seed value by 1, so each slice will have a 

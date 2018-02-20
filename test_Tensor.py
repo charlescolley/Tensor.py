@@ -7,14 +7,14 @@ from random import randint, uniform
 
 #GLOBAL TEST VARIABLES
 N = 6
-M = 6
+M = 7
 T = 5
 
 
-def set_up_tensor(n,m,k):
+def set_up_tensor(n,m,k, format='coo'):
   slices = []
   for t in range(k):
-    slices.append(sp.random(n,m))
+    slices.append(sp.random(n,m,density=.5,format = format))
 
   return Tensor(slices), slices
 
@@ -237,17 +237,113 @@ def test_set_scalar_errors():
                               squeeze tests
 -----------------------------------------------------------------------------'''
 def test_squeeze_passed_in_slice():
-  n = 10
-  m = 9
-
-  X = sp.random(n,m,format='dok',density=.4)
+  X = sp.random(N,M,format='dok',density=.4)
   T = Tensor()
   tensor_X = T.squeeze(X)
 
-  assert tensor_X.shape == (n,1,m)
+  assert tensor_X.shape == (N,1,M)
 
-  for i in range(m):
+  for i in range(M):
     assert (tensor_X.get_frontal_slice(i) - X[:,i]).nnz == 0
+
+def test_squeeze_in_place():
+  A, slices = set_up_tensor(N,M,T,'csr')
+
+  A.squeeze()
+
+  assert A.shape == (N,T,M)
+  assert A._slice_format == 'dok'
+
+  for t in range(M):
+    new_frontal_slice = A._slices[t]
+    for j in range(T):
+      assert (new_frontal_slice[:,j] - slices[j][:,t]).nnz == 0
+
+def test_squeeze_warnings():
+  A, slices = set_up_tensor(N,M,T)
+  with pytest.warns(RuntimeWarning):
+    A.squeeze()
+
+
+
+def test_squeeze_errors():
+  T = Tensor()
+
+  with pytest.raises(TypeError):
+    T.squeeze(['blah',3])
+    T.squeeze(4)
+    T.squeeze('test')
+
+
+'''-----------------------------------------------------------------------------
+                                t product tests
+-----------------------------------------------------------------------------'''
+def build_block_circulant_matrix(tensor, transpose = False):
+  (N,M,T) = tensor.shape
+  if transpose:
+    block_circ_matrix = sp.random(M*T,N*T,density=0,format='dok')
+  else:
+    block_circ_matrix = sp.random(N*T,M*T,density=0,format='dok')
+
+  #populate the matrix
+  for i in range(T):
+    for j in range(T):
+      if transpose:
+        print (tensor._slices[(j + (T - i)) % T].T).shape
+        block_circ_matrix[i * M:(i + 1) * M, j * N:(j + 1) * N] = \
+          (tensor._slices[(j + (T - i)) % T]).T
+      else:
+        block_circ_matrix[i*N:(i+1)*N, j*M:(j+1)*M] = \
+          tensor._slices[(i + (T - j))%T]
+
+  return block_circ_matrix
+
+def test_t_product():
+  A, slices = set_up_tensor(N,M,T,'dok')
+  bcm = build_block_circulant_matrix(A)
+  bcm_T = build_block_circulant_matrix(A,transpose=True)
+
+  X = sp.random(M,T,density=.5,format='dok')
+  X2 = sp.random(N, T, density=.5, format='dok')
+
+  flattened_x = np.empty((M * T,1))
+  flattened_x2 = np.empty((N * T, 1))
+
+  for t in range(T):
+    flattened_x[M*t:M*(t+1)] = X[:,t].todense()
+    flattened_x2[N*t:N*(t+1)] = X2[:,t].todense()
+
+  t_prod_x = bcm * flattened_x
+  t_prod_transpose_x = bcm_T * flattened_x2
+
+  B = A.t_product(A.squeeze(X))
+  C = A.t_product(A.squeeze(X2),transpose=True)
+
+  #check each slice
+  for t in range(T):
+    print t_prod_x.shape
+    assert np.allclose(t_prod_x[N*t:N*(t+1)],
+                      B._slices[t].todense().reshape(N,1),atol=1e-12)
+    assert np.allclose(t_prod_transpose_x[M*t:M*(t+1)],
+                      C._slices[t].todense().reshape(M,1),atol=1e-12)
+
+def test_t_product_errors():
+  A, slices = set_up_tensor(N,M,T,'dok')
+  B = Tensor()
+
+  #check invalid shape errors
+  with pytest.raises(ValueError):
+    A.t_product(B)
+    A.t_product(B,transpose=True)
+
+  #check invalid type errors
+  with pytest.raises(TypeError):
+    A.t_product(5)
+    A.t_product('test')
+    A.t_product([1,23,4,'apple'])
+    
+
+
 
 '''-----------------------------------------------------------------------------
                               scale tensor tests
@@ -272,7 +368,7 @@ def test_scale_tensor_errors():
     A.scale_tensor('apples',inPlace=True)
 
 '''-----------------------------------------------------------------------------
-                              scale tensor tests
+                              zero tensor tests
 -----------------------------------------------------------------------------'''
 def test_zeros():
   Z1 = Te.zeros((N, M, T))
