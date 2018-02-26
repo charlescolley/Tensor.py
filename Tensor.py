@@ -27,6 +27,7 @@
         twist                        UNTESTED
         t-product                    UNTESTED
         scale_tensor
+        find_max                     UNTESTED
       Overloaded Methods:
         __add__                      UNTESTED
         __mul__                      UNTESTED
@@ -49,11 +50,15 @@
 -----------------------------------------------------------------------------'''
 import os
 import scipy.sparse as sp
+import itertools
 from warnings import warn
 from numbers import Number
 
-'''--------------------------------------------------------------------------'''
 
+
+'''-----------------------------------------------------------------------------
+  Core Class
+-----------------------------------------------------------------------------'''
 
 class Tensor:
 
@@ -115,51 +120,32 @@ class Tensor:
       return self.scale_tensor(-1)
 
   '''---------------------------------------------------------------------------
-    save(folder_name, overwrite)
-      This function takes in a folder name and saves all the slices to the 
-      folder. If the folder already exists, a new name will be created by 
-      appending a number to the folder name, unless the overwrite flag is 
-      True, in which case, the function will delete the contents of the 
-      folder and replace them with the tensor slices. Note that since the 
-      save function depends on the scipy save_npz function, the slices must 
-      be of the appropriate format, if they're not, then they will be 
-      converted to the COO format for fast conversion upon loading.
+    save(file_name)
+      This function takes in a file name and copies the elements into a 
+      sparse matrix corresponding to the mode 1 flattening of the tensor and 
+      saves the file as a dok matrix. 
     Input:
-      folder_name - (string)
-        The name of the folder to save the tensor slices
-      overwrite - (optional bool)
-        a boolean indicating whether or not to overwrite the contents of the 
-        folder if the folder_name given coincides with a folder already in 
-        the directory. 
+      file_name - (string)
+        The name of the file to save the tensor.
   ---------------------------------------------------------------------------'''
-  def save(self, folder_name, overwrite = False):
-    if os.path.exists(folder_name):
-      if overwrite:
-        for file in os.listdir(folder_name):
-          os.remove(os.path.join(folder_name,file))
+  def save(self, file_name):
+    #copy slices into a flattened empty dok matrix
+    N,M,T = self.shape
+    to_save = sp.rand(N,M*T,density=0,format="dok")
+
+    for t in range(T):
+      if self._slice_format == "dok":
+        for ((i,j),v) in self._slices[t].iteritems():
+          to_save[i, j + t * M] = v
       else:
-        # find a valid folder name
-        new_folder_index = 1
-        while True:
-          new_folder_name = folder_name +'_'+ str(new_folder_index)
-          if not os.path.exists(new_folder_name):
-            folder_name = new_folder_name
-            break
-          new_folder_index += 1
-        os.makedirs(folder_name)
-    else:
-      os.makedirs(folder_name)
+        if self._slice_format == "coo":
+          slice = self._slices[t]
+        else:
+          slice = self._slices[t].tocoo()
+        for (i,j,v) in itertools.izip(slice.row,slice[t].col,slice[t].data):
+          to_save[i,j + t*M] = v
 
-    #save the first slice and check if type is valid for saving.
-    try:
-      sp.save_npz(folder_name + "slice_0",self._slices[0])
-    except AttributeError:
-      self.convert_slices('coo')
-      sp.save_npz(folder_name + "slice_0",self._slices[0])
-
-    for t,slice in enumerate(self._slices[1:],1):
-      file_name = folder_name+"/slice_{}".format(t)
-      sp.save_npz(file_name,self._slices[t])
+    sp.save_npz(file_name,to_save)
 
 
   '''---------------------------------------------------------------------------
@@ -501,6 +487,54 @@ class Tensor:
         self._slices = map(lambda x: scalar *x, self._slices)
       else:
         return Tensor(map(lambda x: scalar *x, self._slices))
+
+  '''---------------------------------------------------------------------------
+     norm()
+      This function returns the norm (defined with the t product) of the 
+      tensor called upon. Method is computed in a manner rebust to 
+      over/underflow by scaling by the largest element of the tensor. 
+    Returns:
+      norm - (float)
+        a float indicating the size of the tensor.
+  ---------------------------------------------------------------------------'''
+  def norm(self):
+    print "to do"
+
+
+  '''---------------------------------------------------------------------------
+     find_max()
+       This function returns the largest element of the tensor.
+  ---------------------------------------------------------------------------'''
+  def find_max(self):
+    return max(map(lambda x: x.max(),self._slices))
+
+'''-----------------------------------------------------------------------------
+  Helper Functions
+-----------------------------------------------------------------------------'''
+
+  '''---------------------------------------------------------------------------
+   iterate_over_non_zeros()
+       This function takes in a function which takes in a pair of indices and 
+     runs it over all the elements of the tensor. This helps manage iterating 
+     over the non-zeros of the sparse tensor each sparse matrix data structure 
+     has different ways to access the non-zeros. 
+   Input:
+     f - (function on (int, int, int, Number))
+       the function to apply to each non-zero in the sparse matrices. If the 
+       function needs more inputs, it should be curried to be in this form (
+       functools.partial or anonymous functions).    
+  ---------------------------------------------------------------------------'''
+  def _iterate_over_non_zeros(self,f):
+
+  for t in range(self.shape[2]):
+    if self._slice_format == 'coo':
+      for i,j,v in itertools.izip(self._slices[t]):
+        f(i,j,t,v)
+    elif self._slice_format == 'dok':
+      for ((i,j),v) in self._slices[t].iteritems():
+        f(i,j,t,v)
+    else:
+      print "evaluate comparable iteration schemes."
 
 
 
