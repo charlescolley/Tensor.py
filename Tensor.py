@@ -4,13 +4,16 @@
 
     Tensor Class
       Private:
-        _slices - (list of sparse matrices)
+        _slices - (list of sparse matrices or 3rd order ndarray)
          a list of sparse scipy matrices which represents the frontal slices of
          the tensor, i.e. the t-th element of the list will be the matrix
-         A[:,:,t]. All slices will be the same type of sparse matrix.
+         A[:,:,t]. All slices will be the same type of sparse matrix. If
+         slices is passed in as an ndarray, then it must only have 3
+         dimensions.
         _slice_format - (string)
          a string indicating the sparse matrix format of each of the frontal
-         slices in the tensor.
+         slices in the tensor. If _slices is an ndarray it will be set to
+         'dense'
         shape - (tuple of ints)
          a tuple with the shape of the tensor. The ith element of shape
          corresponds to the dimension of the ith mode.
@@ -32,6 +35,7 @@
         frobenius_norm               UNTESTED
         norm                         UNTESTED
         cos_distance
+        to_dense
       Overloaded Methods:
         __add__                      UNTESTED
         __mul__                      UNTESTED
@@ -56,6 +60,7 @@ import scipy.sparse as sp
 import itertools
 import pickle
 from scipy.linalg import norm as sp_norm
+from numpy import ndarray
 from warnings import warn
 from numbers import Number
 
@@ -73,6 +78,15 @@ class Tensor:
       #if string passed in, assumed to be a file path
       if isinstance(slices,str):
         self.load(slices)
+      elif isinstance(slices,ndarray):
+        #check order of tensor
+        if len(slices.shape) != 3:
+          raise ValueError("ndarray must be of order 3, slices passed in has "
+                           "order {}\n".format(len(slices.shape)))
+        else:
+          self._slices = slices
+          self.shape = slices.shape
+          self._slice_format = "dense"
       else:
         #check for valid slice array
         slice_shape = slices[0].shape
@@ -611,7 +625,13 @@ class Tensor:
     else:
       return False
 
-
+  '''---------------------------------------------------------------------------
+     todense(make_new)
+         this function will convert the current tensor instance into a dense 
+       tensor, or if make_new is true, will return a dense tensor instance.  
+  ---------------------------------------------------------------------------'''
+  def todense(self):
+    print "to do"
 '''-----------------------------------------------------------------------------
                               NON-CLASS FUNCTIONS
 -----------------------------------------------------------------------------'''

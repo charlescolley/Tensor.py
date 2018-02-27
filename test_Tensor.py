@@ -12,10 +12,13 @@ M = 7
 T = 5
 
 
-def set_up_tensor(n,m,k, format='coo'):
-  slices = []
-  for t in range(k):
-    slices.append(sp.random(n,m,density=.5,format = format))
+def set_up_tensor(n,m,k, format='coo',dense = False):
+  if dense:
+    slices = np.random.rand(n,m,k)
+  else:
+    slices = []
+    for t in range(k):
+      slices.append(sp.random(n,m,density=.5,format = format))
 
   return Tensor(slices), slices
 
@@ -50,7 +53,6 @@ def test_file_constructor():
 
    assert B == A
 
-
 def test_non_empty_valid_constructor():
   A,slices = set_up_tensor(N,M,T)
 
@@ -72,6 +74,12 @@ def test_invalid_slices_constructors():
   with pytest.raises(ValueError,match=r'slices must all have the same shape.*'):
     A = Tensor(slices)
 
+  with pytest.raises(ValueError,match=r'ndarray must be of order 3, slices.*'):
+    Tensor(np.random.rand(1,2,3,4,5))
+    Tensor(np.random.rand(1,2))
+
+  with
+
 def test_inconsistent_matrix_type_constructor():
   slices = []
   T =2
@@ -82,6 +90,16 @@ def test_inconsistent_matrix_type_constructor():
 
   with pytest.warns(RuntimeWarning, match = "slice format .*"):
     A = Tensor(slices)
+
+def test_dense_tensor_constructor():
+  A, slices = set_up_tensor(N,M,T,dense=True)
+
+  assert A.shape[0] == N
+  assert A.shape[1] == M
+  assert A.shape[2] == T
+  assert A._slice_format == "dense"
+  assert (A._slices == slices).all()
+
 
 '''-----------------------------------------------------------------------------
                              convert slices test
