@@ -3,6 +3,7 @@ import numpy as np
 from Tensor import Tensor
 import Tensor as Te
 import pytest
+from tempfile import NamedTemporaryFile
 from random import randint, uniform
 
 #GLOBAL TEST VARIABLES
@@ -19,7 +20,6 @@ def set_up_tensor(n,m,k, format='coo'):
   return Tensor(slices), slices
 
 
-
 '''-----------------------------------------------------------------------------
                               constructor tests
 -----------------------------------------------------------------------------'''
@@ -29,10 +29,27 @@ def test_empty_constructor():
   A = Tensor()
 
   assert A.shape[0] == 0
-  assert A.shape[1] == 0
+  assert A.shape[1]  == 0
   assert A.shape[2] == 0
 
   assert  A._slices == []
+
+def test_file_constructor():
+
+   A, slices = set_up_tensor(N,M,T)
+
+   with NamedTemporaryFile() as tmp_file:
+     A.save(tmp_file.name)
+
+     B = Tensor(tmp_file.name)
+
+     assert B.shape[0] == N
+     assert B.shape[1] == M
+     assert B.shape[2] == T
+     assert B._slice_format == "coo"
+
+   assert B == A
+
 
 def test_non_empty_valid_constructor():
   A,slices = set_up_tensor(N,M,T)
@@ -289,7 +306,6 @@ def build_block_circulant_matrix(tensor, transpose = False):
   for i in range(T):
     for j in range(T):
       if transpose:
-        print (tensor._slices[(j + (T - i)) % T].T).shape
         block_circ_matrix[i * M:(i + 1) * M, j * N:(j + 1) * N] = \
           (tensor._slices[(j + (T - i)) % T]).T
       else:
@@ -341,7 +357,7 @@ def test_t_product_errors():
     A.t_product(5)
     A.t_product('test')
     A.t_product([1,23,4,'apple'])
-    
+
 
 
 
