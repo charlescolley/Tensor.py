@@ -15,8 +15,8 @@
          a tuple with the shape of the tensor. The ith element of shape
          corresponds to the dimension of the ith mode.
       Public Methods:
-        save(folder_name, overwrite) UNTESTED
-        load(
+        save                         UNTESTED
+        load                         UNTESTED
         convert_slices(format)
         set_frontal_slice
         get_front_slice
@@ -28,10 +28,12 @@
         t-product                    UNTESTED
         scale_tensor
         find_max                     UNTESTED
+        is_equal_to_tensor           UNTESTED
       Overloaded Methods:
         __add__                      UNTESTED
         __mul__                      UNTESTED
         __neg__                      UNTESTED
+        __eq__                       UNTESTED
 
     Class utilization
       zeros                          UNTESTED
@@ -51,6 +53,7 @@
 import os
 import scipy.sparse as sp
 import itertools
+import pickle
 from warnings import warn
 from numbers import Number
 
@@ -119,34 +122,45 @@ class Tensor:
     def __neg__(self):
       return self.scale_tensor(-1)
 
+    def __eq__(self, other):
+      return self.is_equal_to_tensor(other)
+
+
   '''---------------------------------------------------------------------------
     save(file_name)
-      This function takes in a file name and copies the elements into a 
-      sparse matrix corresponding to the mode 1 flattening of the tensor and 
-      saves the file as a dok matrix. 
+      This function takes in a file name and uses the pickle module to save 
+      the Tensor intance.
     Input:
       file_name - (string)
         The name of the file to save the tensor.
   ---------------------------------------------------------------------------'''
   def save(self, file_name):
-    #copy slices into a flattened empty dok matrix
-    N,M,T = self.shape
-    to_save = sp.rand(N,M*T,density=0,format="dok")
+    with open(file_name,'w') as handle:
+      pickle.dump([self._slices,self._slice_format,self.shape],handle)
 
-    for t in range(T):
-      if self._slice_format == "dok":
-        for ((i,j),v) in self._slices[t].iteritems():
-          to_save[i, j + t * M] = v
-      else:
-        if self._slice_format == "coo":
-          slice = self._slices[t]
-        else:
-          slice = self._slices[t].tocoo()
-        for (i,j,v) in itertools.izip(slice.row,slice[t].col,slice[t].data):
-          to_save[i,j + t*M] = v
 
-    sp.save_npz(file_name,to_save)
+  '''---------------------------------------------------------------------------
+    load(file_name)
+      This function takes in a file name and loads in into the current tensor 
+      instance, if the make_new flag is true it will return a new instance of a 
+      tensor. 
+    Input:
+      file_name - (string)
+        The name of the file to load the tensor from.
+      make_new - (bool)
+        Optional bool which indicates whether or not to create a new instance of
+        a tensor, or just copy it into the current instance. 
+  ---------------------------------------------------------------------------'''
+  def load(self,file_name, make_new = False):
+    with open(file_name,'r') as handle:
+      private_elements = pickle.load(handle)
 
+    if make_new:
+      return Tensor(private_elements[0])
+    else:
+      self._slices = private_elements[0]
+      self._slice_format = private_elements[1]
+      self.shape = private_elements[2]
 
   '''---------------------------------------------------------------------------
       convert_slices(format)
@@ -508,36 +522,52 @@ class Tensor:
   def find_max(self):
     return max(map(lambda x: x.max(),self._slices))
 
-'''-----------------------------------------------------------------------------
-  Helper Functions
------------------------------------------------------------------------------'''
-
   '''---------------------------------------------------------------------------
-   iterate_over_non_zeros()
-       This function takes in a function which takes in a pair of indices and 
-     runs it over all the elements of the tensor. This helps manage iterating 
-     over the non-zeros of the sparse tensor each sparse matrix data structure 
-     has different ways to access the non-zeros. 
-   Input:
-     f - (function on (int, int, int, Number))
-       the function to apply to each non-zero in the sparse matrices. If the 
-       function needs more inputs, it should be curried to be in this form (
-       functools.partial or anonymous functions).    
+     is_equal_to_tensor(other,tol)
+       This function takes in a another object and a tolerance value and 
+       determines whether or not the input tensor is either elementwise equal to
+       or with a tolerance range of another tensor.
+     Input: 
+       other - (unspecified)
+         object to compare the tensor with, may be any time, but will only 
+         return true if the input is a Tensor instance
+       tol - (float)
+         the tolerance to declare whether or not a tensor is elementwise 
+         close enough. uses the absolute value, b - tol < a < b + tol.
+     Returns:
+       (bool)
+         indicates whether or not the two tensors are equal.
   ---------------------------------------------------------------------------'''
-  def _iterate_over_non_zeros(self,f):
+  def is_equal_to_tensor(self,other, tol = None):
+    if tol:
+      comp = lambda x,y: abs(x - y) < tol
+    else
+      comp = lambda x,y: x == y
 
-  for t in range(self.shape[2]):
-    if self._slice_format == 'coo':
-      for i,j,v in itertools.izip(self._slices[t]):
-        f(i,j,t,v)
-    elif self._slice_format == 'dok':
-      for ((i,j),v) in self._slices[t].iteritems():
-        f(i,j,t,v)
+    if isinstance(other, Tensor):
+      for t in xrange(self.shape[2]):
+        # if other is of type coo, change to something one can index into
+        if other._slice_format == 'coo':
+          other_slice = other._slices[t].todok()
+        else:
+          other_slice = other._slices[t]
+
+        # iterate over dok differently than others
+        if self._slice_format == 'dok':
+          for ((i, j), v) in self._slices[t].iteritems():
+            if not comp(other_slice[i, j], v):
+              return False
+        else:
+          if self._slice_format == 'coo':
+            slice = self._slices[t]
+          else:  # other matrix forms are faster to convert to coo to check
+            slice = self._slices[t].tocoo()
+          for (i, j, v) in itertools.izip(slice.row, slice.col, slice.data):
+            if not comp(other_slice[i, j],v):
+              return False
+      return True
     else:
-      print "evaluate comparable iteration schemes."
-
-
-
+      return False
 
 '''-----------------------------------------------------------------------------
                               NON-CLASS FUNCTIONS
@@ -593,3 +623,27 @@ def zeros(shape, dtype = None,format = 'coo'):
     Zero_Tensor - (Tensor Instance)
       an instance of a Tensor of the appropriate dimensions with all zeros. 
 -----------------------------------------------------------------------------'''
+
+'''-----------------------------------------------------------------------------
+                              Old save code
+-----------------------------------------------------------------------------'''
+
+'''
+ #copy slices into a flattened empty dok matrix
+ N,M,T = self.shape
+ to_save = sp.rand(N,M*T,density=0,format="dok")
+
+ for t in range(T):
+   if self._slice_format == "dok":
+     for ((i,j),v) in self._slices[t].iteritems():
+       to_save[i, j + t * M] = v
+   else:
+     if self._slice_format == "coo":
+       slice = self._slices[t]
+     else:
+       slice = self._slices[t].tocoo()
+     for (i,j,v) in itertools.izip(slice.row,slice.col,slice.data):
+       to_save[i,j + t*M] = v
+
+ sp.save_npz(file_name,to_save.tocoo())
+ '''
