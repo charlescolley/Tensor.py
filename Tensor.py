@@ -54,6 +54,7 @@ import os
 import scipy.sparse as sp
 import itertools
 import pickle
+from scipy.linalg import norm
 from warnings import warn
 from numbers import Number
 
@@ -514,7 +515,6 @@ class Tensor:
   def norm(self):
     print "to do"
 
-
   '''---------------------------------------------------------------------------
      find_max()
        This function returns the largest element of the tensor.
@@ -568,6 +568,14 @@ class Tensor:
       return True
     else:
       return False
+  '''---------------------------------------------------------------------------
+     frobenius_norm()
+         Returns the Frobenius norm of the tensor. Computed using scipy's norm 
+       function for numerical stability. 
+  ---------------------------------------------------------------------------'''
+  def frobenius_norm(self):
+    return np.linalg.norm(map(lambda x: norm(x,ord='fro'),self._slices))
+
 
 '''-----------------------------------------------------------------------------
                               NON-CLASS FUNCTIONS
