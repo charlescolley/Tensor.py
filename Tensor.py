@@ -186,9 +186,9 @@ class Tensor:
 
   '''---------------------------------------------------------------------------
       convert_slices(format)
-        This function will convert all of the slices to a desired format, 
-        this derives its functionality from the scipy.sparse._.asformat 
-        function. 
+        This function will convert all of the slices to a desired sparse matrix 
+        format, this derives its functionality from the scipy.sparse._.asformat 
+        function. To convert to a dense tensor, use todense(). 
       Input:
         format- (string)
           string that specifies the possible formats, valid formats are the 
@@ -198,9 +198,12 @@ class Tensor:
         https://docs.scipy.org/doc/scipy/reference/sparse.html
   ---------------------------------------------------------------------------'''
   def convert_slices(self,format):
-    for t, slice in enumerate(self._slices):
-      self._slices[t] = slice.asformat(format)
-    self._slice_format = format
+    if self._slice_format == "dense":
+      raise AttributeError("this function is for sparse tensors\n")
+    else:
+      for t, slice in enumerate(self._slices):
+        self._slices[t] = slice.asformat(format)
+      self._slice_format = format
 
   '''---------------------------------------------------------------------------
       get_frontal_slice(t)

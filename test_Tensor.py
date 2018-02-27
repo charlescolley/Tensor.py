@@ -78,7 +78,6 @@ def test_invalid_slices_constructors():
     Tensor(np.random.rand(1,2,3,4,5))
     Tensor(np.random.rand(1,2))
 
-  with
 
 def test_inconsistent_matrix_type_constructor():
   slices = []
@@ -111,6 +110,11 @@ def test_convert_slices():
   assert A._slice_format == 'dok'
   for t in range(T):
     assert A._slices[t].format == 'dok'
+
+def test_convert_slices_error():
+  A,_ = set_up_tensor(N,M,T,dense=True)
+  with pytest.raises(AttributeError):
+    A.convert_slices('dok')
 
 '''-----------------------------------------------------------------------------
                             get/set slices tests
