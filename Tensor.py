@@ -29,6 +29,9 @@
         scale_tensor
         find_max                     UNTESTED
         is_equal_to_tensor           UNTESTED
+        frobenius_norm               UNTESTED
+        norm                         UNTESTED
+        cos_distance
       Overloaded Methods:
         __add__                      UNTESTED
         __mul__                      UNTESTED
@@ -39,14 +42,12 @@
       zeros                          UNTESTED
 
   TODO: -update constructor to take in a file path
-        -change save function make one big flattened matrix and save that
-          scipy file
         -write random Tensor
-        -write load to handle the flattened tensor save
         -write indexing functions
         -write print overloading
         -write todense function
         -squeeze needs to handle different kind of sparse matrices
+        -add in non-zero count private element?
 --------------------------------------------------------------------------------
   Dependencies
 -----------------------------------------------------------------------------'''
@@ -54,7 +55,7 @@ import os
 import scipy.sparse as sp
 import itertools
 import pickle
-from scipy.linalg import norm
+from scipy.linalg import norm as sp_norm
 from warnings import warn
 from numbers import Number
 
@@ -69,28 +70,31 @@ class Tensor:
   def __init__(self, slices = None):
 
     if slices is not None:
+      #if string passed in, assumed to be a file path
+      if isinstance(slices,str):
+        self.load(slices)
+      else:
+        #check for valid slice array
+        slice_shape = slices[0].shape
+        slice_format = slices[0].getformat()
+        for t,slice in enumerate(slices[1:],1):
+          if slice.shape != slice_shape:
+            raise ValueError("slices must all have the same shape, slice {} "
+                             "has shape {}, but slice 0 has shape {}\n".
+                             format(t,slice.shape,slice_shape))
+          if slice.getformat() != slice_format:
+            warn("slice format {} is different from first slice, "
+                              "coverting to format {},\n this may make "
+                              "initialization slow. pass in list of same type "
+                              "sparse matrix for \nfaster "
+                              "initialization\n".
+                              format(slice.getformat(),slice_format),
+                          RuntimeWarning)
+            slices[t] = slice.asformat(slice_format)
 
-      #check for valid slice array
-      slice_shape = slices[0].shape
-      slice_format = slices[0].getformat()
-      for t,slice in enumerate(slices[1:],1):
-        if slice.shape != slice_shape:
-          raise ValueError("slices must all have the same shape, slice {} "
-                           "has shape {}, but slice 0 has shape {}\n".
-                           format(t,slice.shape,slice_shape))
-        if slice.getformat() != slice_format:
-          warn("slice format {} is different from first slice, "
-                            "coverting to format {},\n this may make "
-                            "initialization slow. pass in list of same type "
-                            "sparse matrix for \nfaster "
-                            "initialization\n".
-                            format(slice.getformat(),slice_format),
-                        RuntimeWarning)
-          slices[t] = slice.asformat(slice_format)
-
-      self._slices = slices
-      self.shape = (slice_shape[0],slice_shape[1],len(slices))
-      self._slice_format = slice_format
+        self._slices = slices
+        self.shape = (slice_shape[0],slice_shape[1],len(slices))
+        self._slice_format = slice_format
     else:
       self._slices = []
       self.shape = (0, 0, 0)
@@ -120,12 +124,15 @@ class Tensor:
                       "parameter passed in is of type {}".
                       format(other, type(other)))
 
-    def __neg__(self):
-      return self.scale_tensor(-1)
+  def __neg__(self):
+    return self.scale_tensor(-1)
 
-    def __eq__(self, other):
-      return self.is_equal_to_tensor(other)
+  def __eq__(self, other):
+    print self.is_equal_to_tensor(other)
+    return self.is_equal_to_tensor(other)
 
+  def __ne__(self,other):
+    return not self.__eq__(other)
 
   '''---------------------------------------------------------------------------
     save(file_name)
@@ -387,8 +394,14 @@ class Tensor:
 
       #populate them
       for (t,slice) in enumerate(self._slices):
-        for ((i,j),val) in slice.iteritems():
-          new_slices[j][i,t] = val
+        if self._slice_format == 'dok':
+          for ((i,j),val) in slice.iteritems():
+            new_slices[j][i,t] = val
+        else:
+          if self._slice_format != 'coo':
+            slice = slice.tocoo()
+          for (i,j,val) in itertools.izip(slice.row,slice.col,slice.data):
+            new_slices[j][i,t] = val
 
       self._slices = new_slices
       self.shape = (n,T,m)
@@ -504,6 +517,14 @@ class Tensor:
         return Tensor(map(lambda x: scalar *x, self._slices))
 
   '''---------------------------------------------------------------------------
+     frobenius_norm()
+         Returns the Frobenius norm of the tensor. Computed using scipy's norm 
+       function for numerical stability. 
+  ---------------------------------------------------------------------------'''
+  def frobenius_norm(self):
+    return np.linalg.norm(map(lambda x: sp_norm(x,ord='fro'),self._slices))
+
+  '''---------------------------------------------------------------------------
      norm()
       This function returns the norm (defined with the t product) of the 
       tensor called upon. Method is computed in a manner rebust to 
@@ -513,7 +534,28 @@ class Tensor:
         a float indicating the size of the tensor.
   ---------------------------------------------------------------------------'''
   def norm(self):
-    print "to do"
+    T = self.shape[2]
+    norm = 0.0
+
+    #compute frobenius norm of \langle X, X \rangle slice wise
+    for i in xrange(T):
+      slice = self._slices[(T - i) % T].T * self._slices[0]
+      for t in xrange(1,T):
+        slice += self._slices[(j + (T - i)) % T].T * self._slices[j]
+
+      norm += sp_norm(slice,ord = 'fro')**2
+
+    return norm/self.frobenius_norm()
+
+  '''---------------------------------------------------------------------------
+     tubal_angle(B)
+        This function returns the tubal angle of the current instance of a 
+      tensor with another tensor B passed in. This is defined using the inner 
+      product defined by the t-product. 
+    Returns:
+      cos_distance - (float)
+        the cosine distance between the current tensor and the tensor passed in.
+  ---------------------------------------------------------------------------'''
 
   '''---------------------------------------------------------------------------
      find_max()
@@ -541,7 +583,7 @@ class Tensor:
   def is_equal_to_tensor(self,other, tol = None):
     if tol:
       comp = lambda x,y: abs(x - y) < tol
-    else
+    else:
       comp = lambda x,y: x == y
 
     if isinstance(other, Tensor):
@@ -568,13 +610,6 @@ class Tensor:
       return True
     else:
       return False
-  '''---------------------------------------------------------------------------
-     frobenius_norm()
-         Returns the Frobenius norm of the tensor. Computed using scipy's norm 
-       function for numerical stability. 
-  ---------------------------------------------------------------------------'''
-  def frobenius_norm(self):
-    return np.linalg.norm(map(lambda x: norm(x,ord='fro'),self._slices))
 
 
 '''-----------------------------------------------------------------------------
