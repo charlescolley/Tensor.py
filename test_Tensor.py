@@ -1,5 +1,6 @@
 import scipy.sparse as sp
 import numpy as np
+from numpy.linalg import norm as np_norm
 from Tensor import Tensor
 import Tensor as Te
 import pytest
@@ -167,32 +168,64 @@ def test_expanding_tensor():
 '''-----------------------------------------------------------------------------
                               save/load tests
 -----------------------------------------------------------------------------'''
-
-'''
 def test_save_load():
-  slices = []
+  A, slices = set_up_tensor(N, M, T,dense=True)
+  C = Tensor()
 
-  T = 2
-  n = 10
-  m = 9
-  for t in range(T):
-    slices.append(sp.random(n,m))
-'''
+  with NamedTemporaryFile() as tmp_file:
+    A.save(tmp_file.name)
+
+    B = A.load(tmp_file.name,make_new=True)
+    C.load(tmp_file.name)
+
+    assert C.shape[0] == N
+    assert C.shape[1] == M
+    assert C.shape[2] == T
+    assert C._slice_format == "dense"
+
+    assert B.shape[0] == N
+    assert B.shape[1] == M
+    assert B.shape[2] == T
+    assert B._slice_format == "dense"
+
+  assert (B._slices == slices).all()
+  assert (C._slices == slices).all()
+
+
+
 '''-----------------------------------------------------------------------------
                               transpose tests
 -----------------------------------------------------------------------------'''
 
-def test_transpose_in_place():
+def test_sparse_transpose():
   A, slices = set_up_tensor(N, M, T)
+  B = A.transpose()
   A.transpose(inPlace=True)
+
 
   assert A.shape == (M,N,T)
 
   for t in range(T):
     if t == 0:
       assert (A._slices[t] - slices[0].T).nnz == 0
+      assert (B._slices[t] - slices[0].T).nnz == 0
     else:
       assert (A._slices[t] - slices[:0:-1][t-1].T).nnz == 0
+      assert (B._slices[t] - slices[:0:-1][t - 1].T).nnz == 0
+
+def test_dense_non_square_frontal_slices_transpose():
+  A, slices = set_up_tensor(N,M,T,dense=True)
+  B = A.transpose()
+  A.transpose(inPlace=True)
+  for t in range(T):
+    if t == 0:
+      assert (A._slices[:,:,t] == slices[:,:,0].T).all()
+      assert (B._slices[:,:,t] == slices[:,:,0].T).all()
+    else:
+      assert (A._slices[:,:,t] == slices[:,:,t-1].T).all()
+      assert (B._slices[:,:,t] == slices[:,:,t - 1].T).all()
+
+
 
 '''-----------------------------------------------------------------------------
                               get_scalar tests
@@ -379,6 +412,20 @@ def test_t_product_errors():
     A.t_product(5)
     A.t_product('test')
     A.t_product([1,23,4,'apple'])
+
+'''-----------------------------------------------------------------------------
+                            frobenius norm tests
+-----------------------------------------------------------------------------'''
+def test_frobenius_norm():
+  _, dense_slices = set_up_tensor(N,M,T,dense=True)
+
+  sparse_slices = []
+  for t in range(T):
+    sparse_slices.append(sp.coo_matrix(dense_slices[:,:,t]))
+
+  A = Tensor(sparse_slices)
+  assert abs(A.frobenius_norm() - np_norm(dense_slices.reshape(N*M*T))) < 1e-12
+
 
 
 
