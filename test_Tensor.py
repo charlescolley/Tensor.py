@@ -11,7 +11,7 @@ from random import randint, uniform
 N = 6
 M = 7
 T = 5
-
+ERROR_TOL = 1e-12
 
 def set_up_tensor(n,m,k, format='coo',dense = False):
   if dense:
@@ -310,32 +310,45 @@ def test_set_scalar_errors():
 -----------------------------------------------------------------------------'''
 def test_squeeze_passed_in_slice():
   X = sp.random(N,M,format='dok',density=.4)
+  Y = sp.random(N,M, density=.4)
   T = Tensor()
   tensor_X = T.squeeze(X)
+  tensor_Y = T.squeeze(Y)
 
   assert tensor_X.shape == (N,1,M)
+  assert tensor_Y.shape == (N, 1, M)
+
+  #convert coo matrix to dok for access to elements
+  Y = Y.todok()
 
   for i in range(M):
     assert (tensor_X.get_frontal_slice(i) - X[:,i]).nnz == 0
+    assert (tensor_Y.get_frontal_slice(i) - Y[:,i]).nnz == 0
+
 
 def test_squeeze_in_place():
   A, slices = set_up_tensor(N,M,T,'csr')
+  B, slices2 = set_up_tensor(N,M,T,'dok')
 
   A.squeeze()
+  B.squeeze()
 
   assert A.shape == (N,T,M)
   assert A._slice_format == 'dok'
+  assert B.shape == (N,T,M)
+  assert B._slice_format == 'dok'
 
   for t in range(M):
-    new_frontal_slice = A._slices[t]
+    new_frontal_slice =  A._slices[t]
+    new_frontal_slice2 = B._slices[t]
     for j in range(T):
-      assert (new_frontal_slice[:,j] - slices[j][:,t]).nnz == 0
+      assert (new_frontal_slice[:,j] -  slices[j][:,t] ).nnz == 0
+      assert (new_frontal_slice2[:,j] - slices2[j][:,t]).nnz == 0
 
 def test_squeeze_warnings():
   A, slices = set_up_tensor(N,M,T)
   with pytest.warns(RuntimeWarning):
     A.squeeze()
-
 
 
 def test_squeeze_errors():
@@ -345,6 +358,71 @@ def test_squeeze_errors():
     T.squeeze(['blah',3])
     T.squeeze(4)
     T.squeeze('test')
+
+
+
+'''-----------------------------------------------------------------------------
+                              twist tests
+-----------------------------------------------------------------------------'''
+def test_twist():
+  matrix = sp.random(N,M,density=.5,format='dok')
+  matrix2 = sp.random(N,M,density=0,format='dok')
+  matrix3 = sp.random(N,M,density=.5,format='lil')
+
+  slices = []
+  slices2 = []
+  slices3 = []
+  for j in xrange(M):
+    slices.append(matrix[:,j])
+    slices3.append(matrix3[:,j])
+    slices2.append(sp.random(N,1,density=.5,format='coo'))
+    matrix2[:,j] = slices2[-1]
+
+  A = Tensor(slices)
+  A2 = Tensor(slices2)
+  A3 = Tensor(slices3)
+
+  B = A.twist(A)
+  B2 = A.twist(A2)
+  B3 = A.twist(A3)
+
+  assert  B.shape[0] == N
+  assert  B.shape[1] == M
+  assert (B - matrix).nnz == 0
+
+  assert  B2.shape[0] == N
+  assert  B2.shape[1] == M
+  assert (B2 - matrix2).nnz == 0
+
+  assert  B3.shape[0] == N
+  assert  B3.shape[1] == M
+  assert (B3 - matrix3).nnz == 0
+
+  assert (matrix - A.twist(A.squeeze(matrix))).nnz == 0
+  assert (matrix2 - A.twist(A.squeeze(matrix2))).nnz == 0
+  assert (matrix3 - A.twist(A.squeeze(matrix3))).nnz == 0
+
+  A.twist()
+  A2.twist()
+  A3.twist()
+  assert A._slice_format == 'dok'
+  assert A2._slice_format == 'coo'
+  assert A3._slice_format == 'lil'
+
+def test_twist_errors():
+  A, slices = set_up_tensor(N,M,T)
+
+  with pytest.raises(TypeError):
+    A.twist("apple")
+    A.twist(2)
+    A.twist([1,2,3,'test'])
+
+  with pytest.raises(ValueError):
+    A.twist(A)
+
+
+
+
 
 
 '''-----------------------------------------------------------------------------
@@ -394,9 +472,9 @@ def test_t_product():
   for t in range(T):
     print t_prod_x.shape
     assert np.allclose(t_prod_x[N*t:N*(t+1)],
-                      B._slices[t].todense().reshape(N,1),atol=1e-12)
+                      B._slices[t].todense().reshape(N,1),atol=ERROR_TOL)
     assert np.allclose(t_prod_transpose_x[M*t:M*(t+1)],
-                      C._slices[t].todense().reshape(M,1),atol=1e-12)
+                      C._slices[t].todense().reshape(M,1),atol=ERROR_TOL)
 
 def test_t_product_errors():
   A, slices = set_up_tensor(N,M,T,'dok')
@@ -424,10 +502,82 @@ def test_frobenius_norm():
     sparse_slices.append(sp.coo_matrix(dense_slices[:,:,t]))
 
   A = Tensor(sparse_slices)
-  assert abs(A.frobenius_norm() - np_norm(dense_slices.reshape(N*M*T))) < 1e-12
+  assert abs(A.frobenius_norm() - np_norm(dense_slices.reshape(N*M*T))) \
+         < ERROR_TOL
 
 
+'''-----------------------------------------------------------------------------
+                              norm tests
+-----------------------------------------------------------------------------'''
 
+'''-----------------------------------------------------------------------------
+                              __add__/__sub__ tests
+-----------------------------------------------------------------------------'''
+def test__add__and__sub__():
+  A, slices1 = set_up_tensor(N, M, T)
+  B, slices2 = set_up_tensor(N, M, T)
+
+  summed_slices = []
+  subtracted_slices = []
+  for t in range(T):
+    summed_slices.append(slices1[t] + slices2[t])
+    subtracted_slices.append(slices1[t] - slices2[t])
+
+  C = A + B
+  D = A - B
+  for t in range(T):
+    assert (C._slices[t] - summed_slices[t]).nnz == 0
+    print D._slices[t]
+    print "gap"
+    print subtracted_slices[t]
+    assert (D._slices[t] - subtracted_slices[t]).nnz == 0
+
+
+def test__add__and__sub__errors():
+  A, slices1 = set_up_tensor(N, M, T)
+  B, slices2 = set_up_tensor(N+1, M+1, T+1)
+
+  with pytest.raises(ValueError):
+    A + B
+    A - B
+
+  with pytest.raises(TypeError):
+    A + "sandwich"
+    B + slices
+    A - "apple"
+    B - slices
+
+'''-----------------------------------------------------------------------------
+                              __neg__ tests
+-----------------------------------------------------------------------------'''
+
+def test__neg__():
+  A, slices = set_up_tensor(N,M,T)
+  B = -A
+
+  for t in range(T):
+    assert(B._slices[t] + slices[t]).nnz == 0
+
+'''-----------------------------------------------------------------------------
+                              __mul__ tests
+-----------------------------------------------------------------------------'''
+#note that this function defers to scale_tensor and t_product thus only
+# errors are tested here
+def test__mul__errors():
+  A, _ = set_up_tensor(N, M, T)
+
+  with pytest.raises(TypeError):
+    A * "test"
+
+'''-----------------------------------------------------------------------------
+                              find max tests
+-----------------------------------------------------------------------------'''
+def test_find_max():
+  A, slices = set_up_tensor(N,M,T,format='dok')
+
+  A.set_scalar(0,0,0,2)
+
+  assert A.find_max() == 2
 
 
 '''-----------------------------------------------------------------------------
