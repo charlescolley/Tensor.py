@@ -18,17 +18,17 @@
          a tuple with the shape of the tensor. The ith element of shape
          corresponds to the dimension of the ith mode.
       Public Methods:
-        save                         UNTESTED
-        load                         UNTESTED
+        save
+        load
         convert_slices(format)
         set_frontal_slice
         get_front_slice
         set_scalar
         get_scalar
-        transpose
-        squeeze                      UNTESTED
-        twist                        UNTESTED
-        t-product                    UNTESTED
+        transpose              DENSE UNTESTED
+        squeeze
+        twist
+        t-product
         scale_tensor
         find_max                     UNTESTED
         is_equal_to_tensor           UNTESTED
@@ -37,13 +37,14 @@
         cos_distance
         to_dense
       Overloaded Methods:
-        __add__                      UNTESTED
+        __add__
+        __sub__
         __mul__                      UNTESTED
-        __neg__                      UNTESTED
+        __neg__
         __eq__                       UNTESTED
 
     Class utilization
-      zeros                          UNTESTED
+      zeros
 
   TODO: -update constructor to take in a file path
         -write random Tensor
@@ -57,10 +58,11 @@
 -----------------------------------------------------------------------------'''
 import os
 import scipy.sparse as sp
-import itertools
 import pickle
-from scipy.linalg import norm as sp_norm
+from itertools import izip
+from scipy.sparse.linalg import norm as sp_norm
 from numpy import ndarray
+from numpy.linalg import norm as np_norm
 from warnings import warn
 from numbers import Number
 
@@ -124,25 +126,34 @@ class Tensor:
       raise TypeError("{} is not a subclass of Number, or a Tensor instance,\n "
                       "parameter is of type {}\n".format(other,type(other)))
 
-  def __add__(self, other):
-    if isinstance(other,Tensor):
-      #check dimensions
+  def _add_sub_helper(self,other, add):
+    if isinstance(other, Tensor):
+      # check dimensions
       if self.shape != other.shape:
         raise ValueError("invalid shape, input tensor must be of shape {}, \n"
                          "input tensor is of shape {}.\n".format(self.shape,
                                                                  other.shape))
       else:
-        return Tensor(map(lambda (x,y): x + y, zip(self._slices,other._slices)))
+        if add:
+          return Tensor(
+            map(lambda (x, y): x + y, zip(self._slices, other._slices)))
+        else:
+          return Tensor(
+            map(lambda (x, y): x - y, zip(self._slices, other._slices)))
     else:
       raise TypeError("input {} passed in is not an instance of a Tensor, "
                       "parameter passed in is of type {}".
                       format(other, type(other)))
 
+  def __add__(self, other):
+    return self._add_sub_helper(other,add =True)
+  def __sub__(self,other):
+    return self._add_sub_helper(other,add =False)
+
   def __neg__(self):
     return self.scale_tensor(-1)
 
   def __eq__(self, other):
-    print self.is_equal_to_tensor(other)
     return self.is_equal_to_tensor(other)
 
   def __ne__(self,other):
@@ -276,12 +287,6 @@ class Tensor:
       current  
   ---------------------------------------------------------------------------'''
   def set_scalar(self,i,j,k,scalar):
-    #can't assign elements to a coo matrix
-    if self._slices[0].format == 'coo':
-      warn("Tensor slices are of type coo, which don't support index "
-                    "assignment, Tensor slices are being converted to dok.\n",
-                    RuntimeWarning)
-      self.convert_slices('dok')
 
     if not isinstance(scalar,Number):
       raise TypeError("scalar must be a subclass of Number, scalar passed "
@@ -296,6 +301,13 @@ class Tensor:
     if abs(k) > self.shape[2]:
       raise ValueError("k index out of bounds, must be in the domain [-{},"
                        "{}]".format(self.shape[2],self.shape[2]))
+
+    #can't assign elements to a coo matrix
+    if self._slices[0].format == 'coo':
+      warn("Tensor slices are of type coo, which don't support index "
+                    "assignment, Tensor slices are being converted to dok.\n",
+                    RuntimeWarning)
+      self.convert_slices('dok')
 
     self._slices[k][i,j] = scalar
 
@@ -347,17 +359,71 @@ class Tensor:
         Tensor Instance
           if InPlace is false, then this function returns a new tensor 
           instance. 
+      Note: 
+        In the dense case, need to find out when np.reshape will create a 
+        copy of the data undert the hood. 
   ---------------------------------------------------------------------------'''
   def transpose(self, inPlace = False):
-    if inPlace:
-      first_slice = self._slices[0].T
-      self._slices = map(lambda x: x.T, self._slices[:0:-1])
-      self._slices.insert(0,first_slice)
-      self.shape = (self.shape[1],self.shape[0],self.shape[2])
+    (N, M, T) = self.shape
+    if self._slice_format == "dense":
+      if inPlace and N == M:
+        #transpose the 0th slice first
+        for i in xrange(N):
+          for j in xrange(i):
+            temp_val = self._slices[i,j,0]
+            self._slices[i,j,0] = self._slices[j,i,0]
+            self._slices[j,i,0] = temp_val
+
+
+        for t in xrange(1,(T-1)/2 + 1):
+          # handle off diagonals
+          for i in xrange(N):
+            for j in xrange(i):
+              temp_val = self._slices[i,j,t]
+              self._slices[i,j,t] = self.self._slices[j,i,-t%T]
+              self._slices[j,i,-t%T] = temp_val
+
+              temp_val = self._slices[j,i,t]
+              self._slices[j,i, t] = self.self._slices[i, j, -t % T]
+              self._slices[i, j, -t % T] = temp_val
+
+          #handle diagonals
+          for i in xrange(N):
+            temp_val = self._slices[i,i,t]
+            self._slices[i,i,T] = self._slices[i,i,-t%T]
+            self._slices[i,i,-t%T] = temp_val
+
+        #handle middle slice if one exists
+        if (T-1)% 2 != 0:
+          for i in xrange(N):
+            for j in xrange(i):
+              temp_val = self._slices[i,j,(T - 1)/2 + 1]
+              self._slices[i, j, (T - 1) / 2 + 1] = \
+                self._slices[j,i,(T - 1)/2 + 1]
+              self._slices[j,i,(T-1)/2 + 1] = temp_val
+      else:
+        new_slices = ndarray((M,N,T))
+        #handle the off diagonals
+        for t in xrange(T):
+          for i in xrange(N):
+            for j in xrange(M):
+              new_slices[j,i,t] = self._slices[i,j,- t %T]
+
+        if inPlace:
+          self._slices = new_slices
+          self.shape = (M,N,T)
+        else:
+          return Tensor(new_slices)
     else:
-      new_slices = map(lambda x: x.T, self._slices[:0:-1])
-      new_slices.insert(0,self._slices[0].T)
-      return Tensor(new_slices)
+      if inPlace:
+        first_slice = self._slices[0].T
+        self._slices = map(lambda x: x.T, self._slices[:0:-1])
+        self._slices.insert(0,first_slice)
+        self.shape = (self.shape[1],self.shape[0],self.shape[2])
+      else:
+        new_slices = map(lambda x: x.T, self._slices[:0:-1])
+        new_slices.insert(0,self._slices[0].T)
+        return Tensor(new_slices)
 
   '''---------------------------------------------------------------------------
      squeeze()
@@ -417,7 +483,7 @@ class Tensor:
         else:
           if self._slice_format != 'coo':
             slice = slice.tocoo()
-          for (i,j,val) in itertools.izip(slice.row,slice.col,slice.data):
+          for (i,j,val) in izip(slice.row,slice.col,slice.data):
             new_slices[j][i,t] = val
 
       self._slices = new_slices
@@ -453,6 +519,44 @@ class Tensor:
                          "call twist() on that instance".format(X.shape[1]))
       else:
         Z = sp.random(X.shape[0],X.shape[2],format='dok',density=0)
+        for t in range(X.shape[2]):
+          slice = X._slices[t]
+          if X._slice_format == 'dok':
+            for ((i,_),v) in slice.iteritems():
+              Z[i,t] = v
+          else:
+            if X._slice_format != 'coo':
+              slice = slice.tocoo()
+            for (i,_,v) in izip(slice.row,slice.col,slice.data):
+              Z[i,t] = v
+        return Z
+    else:
+      new_slices = []
+      for j in xrange(self.shape[1]):
+        new_slices.append(sp.random(self.shape[0],self.shape[2],
+                                    density=0, format='dok'))
+
+      for t in xrange(self.shape[2]):
+        if self._slice_format == 'dok':
+          for ((i,j), v) in self._slices[t].iteritems():
+            new_slices[j][i,t] = v
+        else:
+          slice = self._slices[t]
+          if self._slice_format != 'coo':
+            slice = slice.tocoo()
+          for (i,j,v) in izip(slice.row,slice.col,slice.data):
+            new_slices[j][i,t] = v
+
+      #convert slices back to original format
+      if self._slice_format != 'dok':
+        new_slices = map(lambda x:x.asformat(self._slice_format),new_slices)
+
+      self._slices = new_slices
+      self._shape = (self.shape[0],self.shape[2],self.shape[1])
+
+
+
+
 
   '''---------------------------------------------------------------------------
      t_product(B)
@@ -539,7 +643,7 @@ class Tensor:
        function for numerical stability. 
   ---------------------------------------------------------------------------'''
   def frobenius_norm(self):
-    return np.linalg.norm(map(lambda x: sp_norm(x,ord='fro'),self._slices))
+    return np_norm(map(lambda x: sp_norm(x,ord='fro'),self._slices))
 
   '''---------------------------------------------------------------------------
      norm()
@@ -551,18 +655,21 @@ class Tensor:
         a float indicating the size of the tensor.
   ---------------------------------------------------------------------------'''
   def norm(self):
-    T = self.shape[2]
     norm = 0.0
+    if (map(lambda x: x.nnz == 0),self._slices).all():
+      return norm
+    else:
+      T = self.shape[2]
 
-    #compute frobenius norm of \langle X, X \rangle slice wise
-    for i in xrange(T):
-      slice = self._slices[(T - i) % T].T * self._slices[0]
-      for t in xrange(1,T):
-        slice += self._slices[(j + (T - i)) % T].T * self._slices[j]
+      #compute frobenius norm of \langle X, X \rangle slice wise
+      for i in xrange(T):
+        slice = self._slices[(T - i) % T].T * self._slices[0]
+        for t in xrange(1,T):
+          slice += self._slices[(j + (T - i)) % T].T * self._slices[j]
 
-      norm += sp_norm(slice,ord = 'fro')**2
+        norm += sp_norm(slice,ord = 'fro')**2
 
-    return norm/self.frobenius_norm()
+      return norm/self.frobenius_norm()
 
   '''---------------------------------------------------------------------------
      tubal_angle(B)
@@ -621,7 +728,7 @@ class Tensor:
             slice = self._slices[t]
           else:  # other matrix forms are faster to convert to coo to check
             slice = self._slices[t].tocoo()
-          for (i, j, v) in itertools.izip(slice.row, slice.col, slice.data):
+          for (i, j, v) in izip(slice.row, slice.col, slice.data):
             if not comp(other_slice[i, j],v):
               return False
       return True
@@ -686,30 +793,6 @@ def zeros(shape, dtype = None,format = 'coo'):
       slice will increment the seed value by 1, so each slice will have a 
       unique seed. 
   Returns:
-    Zero_Tensor - (Tensor Instance)
+    random_Tensor - (Tensor Instance)
       an instance of a Tensor of the appropriate dimensions with all zeros. 
 -----------------------------------------------------------------------------'''
-
-'''-----------------------------------------------------------------------------
-                              Old save code
------------------------------------------------------------------------------'''
-
-'''
- #copy slices into a flattened empty dok matrix
- N,M,T = self.shape
- to_save = sp.rand(N,M*T,density=0,format="dok")
-
- for t in range(T):
-   if self._slice_format == "dok":
-     for ((i,j),v) in self._slices[t].iteritems():
-       to_save[i, j + t * M] = v
-   else:
-     if self._slice_format == "coo":
-       slice = self._slices[t]
-     else:
-       slice = self._slices[t].tocoo()
-     for (i,j,v) in itertools.izip(slice.row,slice.col,slice.data):
-       to_save[i,j + t*M] = v
-
- sp.save_npz(file_name,to_save.tocoo())
- '''
