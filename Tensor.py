@@ -159,6 +159,16 @@ class Tensor:
   def __ne__(self,other):
     return not self.__eq__(other)
 
+  def __getitem__(self, key):
+    print key
+    if  isinstance(key,slice) or isinstance(key,int):
+      return Tensor(self._slices[key])
+    else:
+      print key
+      print len(self._slices[key[2]])
+      print self._slices[key[2]]
+      print map(lambda x: x[key[0],key[1]],self._slices[key[2]])
+
   '''---------------------------------------------------------------------------
     save(file_name)
       This function takes in a file name and uses the pickle module to save 
@@ -286,7 +296,7 @@ class Tensor:
      -expand the tensor when the use passes an index out of range of the 
       current  
   ---------------------------------------------------------------------------'''
-  def set_scalar(self,i,j,k,scalar):
+  def set_scalar(self,k,j,i,scalar):
 
     if not isinstance(scalar,Number):
       raise TypeError("scalar must be a subclass of Number, scalar passed "
@@ -312,7 +322,7 @@ class Tensor:
     self._slices[k][i,j] = scalar
 
   '''---------------------------------------------------------------------------
-      get_scalar(i,j,k)
+      get_scalar(k,j,i)
         This function gets the i,j,k element of the tensor. paired with the 
         set_scalar function. 
       Input:
@@ -326,7 +336,7 @@ class Tensor:
         A[i,j,k] - (scalar number)
           returns the value at the i,j element of the kth frontal slice. 
   ---------------------------------------------------------------------------'''
-  def get_scalar(self,i,j,k):
+  def get_scalar(self,k,j,i):
     #check bounds of i,j,k
     if abs(i) > self.shape[0]:
       raise ValueError("i index out of bounds, must be in the domain [-{},"
@@ -553,10 +563,6 @@ class Tensor:
 
       self._slices = new_slices
       self._shape = (self.shape[0],self.shape[2],self.shape[1])
-
-
-
-
 
   '''---------------------------------------------------------------------------
      t_product(B)
