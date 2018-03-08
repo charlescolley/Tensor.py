@@ -160,14 +160,23 @@ class Tensor:
     return not self.__eq__(other)
 
   def __getitem__(self, key):
-    print key
     if  isinstance(key,slice) or isinstance(key,int):
       return Tensor(self._slices[key])
+    elif len(key) == 2:
+      if isinstance(key[0],slice):
+        return Tensor(map(lambda x: x[:,key[1]],self._slices[key[0]]))
+      else:
+        return Tensor([self._slices[key[0]][:,key[1]]])
+    elif len(key) == 3:
+      if isinstance(key[0],slice):
+        print map(lambda x: x[key[0],key[1]],self._slices[key[2]])
+      else:
+        return Tensor([self._slices[key[0]][key[2],key[1]]])
     else:
-      print key
-      print len(self._slices[key[2]])
-      print self._slices[key[2]]
-      print map(lambda x: x[key[0],key[1]],self._slices[key[2]])
+      raise(ValueError("invalid amount of indices/slices, {} found, must add "
+                       "at most 3 indices and/or slices.".format(len(key))))
+
+  def __setitem__(self, key, value):
 
   '''---------------------------------------------------------------------------
     save(file_name)
