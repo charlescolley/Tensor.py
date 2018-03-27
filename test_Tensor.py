@@ -606,14 +606,24 @@ def test_find_max():
 -----------------------------------------------------------------------------'''
 def test_scale_tensor():
   A,slices = set_up_tensor(N,M,T)
+  C,slices2 = set_up_tensor(N,M,T,dense=True)
 
   scalar = uniform(0,1)
   B = A.scale_tensor(scalar)
   A.scale_tensor(scalar, inPlace=True)
+  D = C.scale_tensor(scalar)
+  C.scale_tensor(scalar, inPlace=True)
+
 
   for t in range(T):
     assert (A._slices[t] - scalar* slices[t]).nnz == 0
     assert (B._slices[t] - scalar * slices[t]).nnz == 0
+
+  for i in range(N):
+    for j in range(M):
+      for t in range(T):
+        assert C._slices[i, j, t] == slices2[i, j, t]
+        assert D._slices[i, j, t] == slices2[i, j, t]
 
 
 def test_scale_tensor_errors():

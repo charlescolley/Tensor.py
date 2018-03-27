@@ -736,9 +736,18 @@ class Tensor:
                       "of type {}\n".format(scalar,type(scalar)))
     else:
       if inPlace:
-        self._slices = map(lambda x: scalar *x, self._slices)
+        if self._slice_format == 'dense':
+          for i in xrange(self.shape[0]):
+            for j in xrange(self.shape[1]):
+              for k in xrange(self.shape[2]):
+                self._slices[i,j,k] *= scalar
+        else:
+          self._slices = map(lambda x: scalar *x, self._slices)
       else:
-        return Tensor(map(lambda x: scalar *x, self._slices))
+        if self._slice_format == 'dense':
+          return Tensor(self._slices * scalar)
+        else:
+          return Tensor(map(lambda x: scalar *x, self._slices))
 
   '''---------------------------------------------------------------------------
      frobenius_norm()
