@@ -25,8 +25,9 @@
         get_front_slice
         set_scalar
         get_scalar
+        resize                SPARSE UNFINISHED
         transpose              DENSE UNTESTED
-        squeeze
+        squeeze                DENSE UNTESTED
         twist
         t-product
         scale_tensor
@@ -45,13 +46,13 @@
 
     Class utilization
       zeros
+      normalize
 
-  TODO: -update constructor to take in a file path
+
+  TODO: -write a reshape function
         -write random Tensor
-        -write indexing functions
         -write print overloading
         -write todense function
-        -squeeze needs to handle different kind of sparse matrices
         -add in non-zero count private element?
 --------------------------------------------------------------------------------
   Dependencies
@@ -61,7 +62,10 @@ import scipy.sparse as sp
 import pickle
 from itertools import izip
 from scipy.sparse.linalg import norm as sp_norm
-from numpy import ndarray
+from scipy.fftpack import fft, ifft,rfft, fftshift, ifftshift, irfft
+from math import sqrt, hypot
+from numpy import ndarray, conj
+from numpy import zeros as np_zeros
 from numpy.linalg import norm as np_norm
 from warnings import warn
 from numbers import Number
@@ -117,7 +121,6 @@ class Tensor:
       self._slice_format = None
 
   def __mul__(self, other):
-
     if isinstance(other, Tensor):
       return self.t_product(other)
     elif isinstance(other, Number):
@@ -169,7 +172,7 @@ class Tensor:
         return Tensor([self._slices[key[0]][:,key[1]]])
     elif len(key) == 3:
       if isinstance(key[0],slice):
-        print map(lambda x: x[key[0],key[1]],self._slices[key[2]])
+        return Tensor(map(lambda x: x[key[0],key[1]],self._slices[key[2]]))
       else:
         return Tensor([self._slices[key[0]][key[2],key[1]]])
     else:
@@ -177,6 +180,7 @@ class Tensor:
                        "at most 3 indices and/or slices.".format(len(key))))
 
   def __setitem__(self, key, value):
+    pass
 
   '''---------------------------------------------------------------------------
     save(file_name)
@@ -236,6 +240,36 @@ class Tensor:
       self._slice_format = format
 
   '''---------------------------------------------------------------------------
+     resize(shape,order)
+         This function takes in a 3 tuple and resizes the tensor according to 
+       the dimension of the values passed into the tuple. The method will 
+       default to row major order (C like) but may be done in col major order 
+       (Fortran like). 
+     Input:
+       shape - (tuple or list of postive ints)
+         a tuple or list with at most length 3 which has the appropriate shapes.
+       order - (optional character)
+         a character indicating whether or not to use column or row major 
+         formatting for the reshape.
+  ---------------------------------------------------------------------------'''
+  def resize(self,shape,order = 'C'):
+    if not isinstance(shape,list) and not isinstance(shape,tuple):
+      raise TypeError('shape is not a valid list or tuple, shape is of type {'
+                      '}'.format(type(shape)))
+    if len(shape) > 3:
+      raise ValueError('shape must be at most length 3, shape is of length {'
+                       '}'.format(len(shape)))
+    prod = lambda list: reduce(lambda x,y: x*y,list)
+    if prod(shape) != prod(self._shape):
+      raise ValueError("cannot reshape Tensor with {} entries into shape {}".
+                       format(prod(self._shape),shape))
+
+    if self._slice_format == 'dense':
+      self._slices.reshape(shape,order)
+      self._shape = shape
+    else:
+      raise NotImplementedError("resize needs to have the sparse case finished")
+  '''---------------------------------------------------------------------------
       get_frontal_slice(t)
         returns the t-th frontal slice. Paired with set_slice().
       Input: 
@@ -252,38 +286,74 @@ class Tensor:
       get_frontal_slice(t)
           replaces the t-th frontal slice. Paired with get_slice().
         Input: 
-          t - (int)
-            index of the slice to replace. if t is larger than the third-mode 
-            dimension, sparse matrices of all zeros are added. 
-          slice - (sparse scipy matrix)
+          ts - (int or slice)
+            index or slice object of the slices to replace. t must be in 
+            range of the number of frontal slices. Use a constructor to 
+            create larger Tensors. 
+          frontal_slice - (sparse scipy matrix)
             the new t-th slice
   ---------------------------------------------------------------------------'''
-  def set_frontal_slice(self, t, slice):
+  def set_frontal_slice(self, ts, frontal_slices):
 
-    #check for correct type
-    n = self.shape[0]
-    m = self.shape[1]
-    if not sp.issparse(slice):
-      raise TypeError("slice is not a scipy sparse matrix, slice passed in "
-                       "is of type {}\n".format(type(slice)))
-    if slice.shape != (n,m):
-      raise ValueError("slice shape is invalid, slice must be of "
-                               "shape ({},"
-                       "{}), slice passed in is of shape {}\n",n,m,slice.shape)
+    #check for valid inputs
+    if isinstance(ts,int):
+      self._set_frontal_slice_validator(ts,frontal_slices)
+    elif isinstance(ts,slice):
+      raise NotImplementedError('finish set frontal')
+    else:
+      raise(TypeError("ts are not an integer or slice, ts are of type {"
+                      "}".format(type(ts))))
 
-    if slice.getformat() != self._slice_format:
-      warn("converting frontal slice to format {}\n".
-                      format(self._slice_format),
-                    UserWarning)
 
     #insert slice in
     if t > self.shape[2]:
       for i in range(t - self.shape[2]-1):
         self._slices.append(sp.random(n,m,density=0,format=self._slice_format))
-      self._slices.append(slice)
+      self._slices.append(frontal_slice)
       self.shape = (n,m,t)
     else:
-      self._slices[t] = slice
+      self._slices[t] = frontal_slice
+
+  '''---------------------------------------------------------------------------
+     _set_frontal_slice_validator(t,frontal_slice)
+         This function is a helper function for determining if the inputs are 
+       valid in the set_frontal_slice function. t is either ts, or an element in
+       the slice object, frontal slice is one of the matrices passed into 
+       set_frontal_slice. This is separated from the formatter as the errors 
+       are raised here.  
+  ---------------------------------------------------------------------------'''
+  def _set_frontal_slice_validator(self,t,frontal_slice):
+    # check for valid index
+    if abs(ts) > self.shape[2]:
+      raise ValueError("out of bounds, 3rd mode index must be less than {} "
+                       "or greater than -{}".format(self.shape[2],
+                                                    self.shape[2]))
+
+    # check for correct type
+    n = self.shape[0]
+    m = self.shape[1]
+    if not sp.issparse(frontal_slice):
+      raise TypeError("slice is not a scipy sparse matrix, slice passed in "
+                      "is of type {}\n".format(type(frontal_slice)))
+    if frontal_slice.shape != (n, m):
+      raise ValueError("slice shape is invalid, slice must be of "
+                       "shape ({},"
+                       "{}), slice passed in is of shape {}\n", n, m,
+                       frontal_slice.shape)
+
+  '''---------------------------------------------------------------------------
+      _set_frontal_slice_formatter(frontal_slice)
+        This function is a helper function for set_frontal_slice. It will 
+        convert the slice to the current tensor slice_format. Warnings are 
+        raised if the format is the not the same. 
+      Note:
+        may be good to only raise an error once so it doesn't burden the 
+        user's stderr for large T. 
+  ---------------------------------------------------------------------------'''
+  def _set_frontal_slice_formatter(self,frontal_slice):
+    if frontal_slice.getformat() != self._slice_format:
+      warn("converting frontal slice to format {}\n".
+           format(self._slice_format), UserWarning)
 
   '''---------------------------------------------------------------------------
       set_scalar(i,j,k,scalar)
@@ -457,9 +527,9 @@ class Tensor:
        It should be noted that X will be a dok sparse matrix after the 
        functio calls. 
      Input:
-       X - (optional n x m sparse matrix)
-         A sparse matrix to be squeezed. Note if none is passed in, then each 
-         frontal slice in self._slices will be squeezed and the instance of 
+       X - (optional n x m sparse matrix or ndarray)
+         A sparse matrix or ndarrayto be squeezed. Note if none is passed in, 
+         then each frontal slice in self._slices will be squeezed and the instance of 
          the Tensor calling this function will be altered. 
      Returns:
        Z - (n x 1 x m Tensor)
@@ -478,36 +548,50 @@ class Tensor:
         for i in range(m):
           slices.append(X[:,i])
         return Tensor(slices)
+      elif isinstance(X,ndarray):
+        if len(X.shape) != 2:
+          raise ValueError("X passed in is not an order 2 ndarray, create an "
+                           "instance of a tensor and call this method on that "
+                           "class instance for a 3rd order ndarray.\n")
+        else:
+          (n,m) = X.shape
+          return Tensor(X.reshape((n,1,m)))
       else:
         raise TypeError("X passed in not a sparse matrix, X is of type {"
                         "}\n".format(type(X)))
     else:
+
       #check format
-      if self._slice_format == 'coo':
-        warn("internally converting from coo to dok format, " \
-                            "may degrade performance\n",RuntimeWarning)
-        self.convert_slices('dok')
+      if self._slice_format == 'dense':
+        (N,M,T) = self.shape
+        self._slices = self._slices.reshape((N,T,M))
+        self.shape = (N,T,M)
+      else:
+        if self._slice_format == 'coo':
+          warn("internally converting from coo to dok format, " \
+                              "may degrade performance\n",RuntimeWarning)
+          self.convert_slices('dok')
 
-      #build new slices
-      new_slices = []
-      (n,m,T) = self.shape
-      for i in range(m):
-        new_slices.append(sp.random(n,T,density=0,format='dok'))
+        #build new slices
+        new_slices = []
+        (n,m,T) = self.shape
+        for i in range(m):
+          new_slices.append(sp.random(n,T,density=0,format='dok'))
 
-      #populate them
-      for (t,slice) in enumerate(self._slices):
-        if self._slice_format == 'dok':
-          for ((i,j),val) in slice.iteritems():
-            new_slices[j][i,t] = val
-        else:
-          if self._slice_format != 'coo':
-            slice = slice.tocoo()
-          for (i,j,val) in izip(slice.row,slice.col,slice.data):
-            new_slices[j][i,t] = val
+        #populate them
+        for (t,slice) in enumerate(self._slices):
+          if self._slice_format == 'dok':
+            for ((i,j),val) in slice.iteritems():
+              new_slices[j][i,t] = val
+          else:
+            if self._slice_format != 'coo':
+              slice = slice.tocoo()
+            for (i,j,val) in izip(slice.row,slice.col,slice.data):
+              new_slices[j][i,t] = val
 
-      self._slices = new_slices
-      self.shape = (n,T,m)
-      self._slice_format = 'dok'
+        self._slices = new_slices
+        self.shape = (n,T,m)
+        self._slice_format = 'dok'
 
   '''---------------------------------------------------------------------------
      twist(X)
@@ -539,6 +623,7 @@ class Tensor:
       else:
         Z = sp.random(X.shape[0],X.shape[2],format='dok',density=0)
         for t in range(X.shape[2]):
+
           slice = X._slices[t]
           if X._slice_format == 'dok':
             for ((i,_),v) in slice.iteritems():
@@ -671,7 +756,7 @@ class Tensor:
   ---------------------------------------------------------------------------'''
   def norm(self):
     norm = 0.0
-    if (map(lambda x: x.nnz == 0),self._slices).all():
+    if all(map(lambda x: x.nnz == 0,self._slices)):
       return norm
     else:
       T = self.shape[2]
@@ -680,11 +765,11 @@ class Tensor:
       for i in xrange(T):
         slice = self._slices[(T - i) % T].T * self._slices[0]
         for t in xrange(1,T):
-          slice += self._slices[(j + (T - i)) % T].T * self._slices[j]
+          slice += self._slices[(t + (T - i)) % T].T * self._slices[t]
 
         norm += sp_norm(slice,ord = 'fro')**2
 
-      return norm/self.frobenius_norm()
+      return sqrt(norm)/self.frobenius_norm()
 
   '''---------------------------------------------------------------------------
      tubal_angle(B)
@@ -811,3 +896,216 @@ def zeros(shape, dtype = None,format = 'coo'):
     random_Tensor - (Tensor Instance)
       an instance of a Tensor of the appropriate dimensions with all zeros. 
 -----------------------------------------------------------------------------'''
+
+'''-----------------------------------------------------------------------------
+   normalize(X)
+       This function takes in a lateral slice and returns a tubal scalar a and 
+     lateral slice V with frobenius norm 1 such that V t_prod a is the 
+     original lateral slice passed in. 
+   Input:
+     X - (Tensor Instance)
+       the lateral slice passed in to be normalized. 
+   Returns:
+     a - (Tensor Instance)
+       the tubal scale. 
+     V - (Tensor Instance)
+       the lateral slice with frobenius norm 1
+   Note:
+     This function should be expanded to take in a full tensor and apply it 
+     to each slice. 
+-----------------------------------------------------------------------------'''
+def normalize(X):
+  if not isinstance(X,Tensor):
+    raise(TypeError("Input must be a Tensor instance\n, X is of type {"
+                    "}".format(type(X))))
+
+  (n,m,T) = X.shape
+  if m != 1:
+    raise NotImplementedError('multiple lateral slices is not supported yet\n')
+
+  #compute the fft of the elements in the lateral slice
+  if X._slice_format == 'dense':
+    slice_fft = rfft(A._slices[:,0,:])
+  else:
+    slice_fft = np_zeros((n, T))
+
+    # copy the non-zeros in
+    for t in xrange(T):
+      if X._slice_format == 'dok':
+        for ((i,_),v) in X._slices[t].iteritems():
+           slice_fft[i,t] = v
+      else:
+        slice = X._slices[t]
+        if X._slice_format != 'coo':
+          slice = slice.tocoo()
+        for (i,v) in izip(slice.row,slice.data):
+          slice_fft[i,t] = v
+    rfft(slice_fft,overwrite_x=True)
+
+  #normalize all the columns
+  tubal_scalar_non_zeros = []
+
+  tubal_scalar_non_zeros.append(np_norm(slice_fft[:,0]))
+  for i in range(n):
+    slice_fft[i,0] = slice_fft[i,0]/tubal_scalar_non_zeros[0]
+
+  if T % 2 == 0:
+    end_T = (T-1)/2+1
+  else:
+    end_T = T/2+1
+
+
+  for t in xrange(1,end_T):
+
+    #compute the norm of the complex components
+    tubal_scalar_non_zeros.append(slice_fft[0,2*t-1]**2 + slice_fft[0,2*t]**2)
+    for i in xrange(1,n):
+      tubal_scalar_non_zeros[t] += slice_fft[i,2*t-1]**2
+      tubal_scalar_non_zeros[t] += slice_fft[i,2*t]**2
+
+    tubal_scalar_non_zeros[t] = sqrt(tubal_scalar_non_zeros[t])
+
+    #scale entries
+    for i in xrange(n):
+      slice_fft[i,2*t-1] = slice_fft[i,2*t-1]/tubal_scalar_non_zeros[t]
+      slice_fft[i,2*t] = slice_fft[i,2*t]/tubal_scalar_non_zeros[t]
+
+  if T % 2 == 0:
+    tubal_scalar_non_zeros.append(np_norm(slice_fft[:, T / 2]))
+    for i in xrange(n):
+      slice_fft[i, -1] = slice_fft[i, -1] / tubal_scalar_non_zeros[-1]
+
+  irfft(slice_fft,overwrite_x = True)
+  tubal_scalar_non_zeros.extend(tubal_scalar_non_zeros[1:])
+  tubal_scalar_non_zeros = ifft(tubal_scalar_non_zeros)
+
+  V = Tensor([sp.dok_matrix(slice_fft)])
+  V.squeeze()
+
+  slices = []
+  for t in range(T):
+    slices.append(sp.dok_matrix((1,1),dtype=complex))
+    slices[t][0,0] = tubal_scalar_non_zeros[t]
+
+  a = Tensor(slices)
+
+
+  return V,a
+
+
+'''-----------------------------------------------------------------------------
+   sparse_givens_rotation(A)
+     This function takes in a Tensor instance and a row and column and either 
+     returns a sparse tensor instance corresponding to the tubal givens 
+     rotation corresponding to zeroing out the ith ,jth tubal scalar or it 
+     will apply it to the tensor passed in. 
+   Input:
+     A - (Tensor Instance)
+       the tensor to compute the givens rotation for. 
+     i - (int)
+       the row of the tubal scalar to zero out.
+     j - (int)
+       the column of the tubal scalar to zero out.
+     i_swap - (int)
+       the second row of the tubal scalar to rotate with respect to. 
+     apply - (optional boolean)
+         a bool which indicates whether or not to the apply the givens 
+        rotation to the tensor rather than return a tensor instance 
+        corresponding to the givens rotation. 
+   Returns:
+     Q - (Tensor Instance)
+       if apply is False (default), then Q will be the tensor instance to 
+       which the 
+       
+    Note:
+      handle i_swap tests to ensure that i =/= i_swap
+-----------------------------------------------------------------------------'''
+def sparse_givens_rotation(A,i,j,i_swap,apply = False):
+  #check for valid input
+  if A._slice_format == 'coo':
+    raise ValueError("cannot index into a coo matrix, convert with "
+                     "convert_slices methods of Tensor class \n")
+
+  if abs(i) >= A.shape[0]:
+    raise ValueError("i is out of bounds, i must be in (-{},{})".format(
+      A.shape[0],A.shape[0]))
+
+  if abs(j) >= A.shape[1]:
+    raise ValueError("j is out of bounds, j must be in (-{},{})".format(
+      A.shape[1],A.shape[1]))
+  if abs(i_swap) >= A.shape[0]:
+    raise ValueError("i_swap is out of bounds, i_swap must be in (-{},"
+                     "{})".format(A.shape[0],A.shape[0]))
+  #TODO: handle test for checking i \neq i_swap
+
+
+  #compute fft of the tubal scalars
+  tubal_scalar1 = fftshift(fft(map(lambda x: x[i,j], A._slices)))
+  tubal_scalar2 = fftshift(fft(map(lambda x: x[i_swap, j], A._slices)))
+
+
+  #compute cos(theta) and sin(theta) in fourier domain
+  for t in range(A.shape[2]):
+    a_mod = abs(tubal_scalar1[t])
+    r = a_mod*sqrt(1 + (abs(tubal_scalar2[t])/a_mod)**2)
+    tubal_scalar1[t] =  tubal_scalar1[t] / r
+    tubal_scalar2[t] =  tubal_scalar2[t] / r
+
+  tubal_scalar2_conj = map(lambda x: conj(x),tubal_scalar2)
+
+
+  print tubal_scalar1
+
+  #convert back with inverse fft
+  ifft(tubal_scalar1,overwrite_x=True)
+  tubal_scalar1 = ifftshift(tubal_scalar1)
+  ifft(tubal_scalar2,overwrite_x=True)
+  tubal_scalar2 = ifftshift(tubal_scalar2)
+  ifft(tubal_scalar2_conj, overwrite_x=True)
+  tubal_scalar4 = ifftshift(tubal_scalar2_conj)
+  print tubal_scalar1
+
+
+  if apply:
+    pass
+  else:
+    for t in range(A.shape[2]):
+      if t == 0:
+        Q_slices = [sp.identity(A.shape[0],format=A._slice_format)]
+      else:
+        Q_slices.append(sp.random(A.shape[0],A.shape[0],
+                           density=0,format=A._slice_format))
+      if i_swap < i:
+        Q_slices[t][i, i]     = -tubal_scalar2_conj[t]
+        Q_slices[t][i_swap, i_swap] =  tubal_scalar2[t]
+        Q_slices[t][i, i_swap]   =  tubal_scalar1[t]
+        Q_slices[t][i_swap, i]   =  tubal_scalar1[t]
+      else:
+        Q_slices[t][i_swap, i_swap] =  tubal_scalar1[t]
+        Q_slices[t][i, i]     =  tubal_scalar1[t]
+        Q_slices[t][i_swap, i]   =  tubal_scalar2[t]
+        Q_slices[t][i, i_swap]   = -tubal_scalar2_conj[t]
+    return Tensor(Q_slices)
+
+
+import os
+
+def main():
+  os.chdir('/home/ccolle01/Documents/Tensor.py')
+  A = Tensor('demo')
+  V,a = normalize(A[:,0,:])
+  A = A[:,0,:]
+  X = V * a
+
+  print A._slices[0].todense()
+  print X._slices[0].todense()
+  print a.shape
+  (_,_,T) = A.shape
+
+  print V.norm()
+  print V.frobenius_norm()
+
+
+if __name__ == "__main__":
+  main()
+
