@@ -245,7 +245,7 @@ def test_working_get_scalar():
   for i in range(n):
     for j in range(m):
       for t in range(T):
-        assert A.get_scalar(i,j,t) == slices[t][i,j]
+        assert A.get_scalar(t,j,i) == slices[t][i,j]
 
 def test_get_scalar_warnings():
   A, slices = set_up_tensor(N, M, T)
@@ -279,8 +279,8 @@ def test_working_set_scalar():
   rand_t = randint(0,T-1)
   val = randint(0,1232)
 
-  A.set_scalar(rand_i,rand_j,rand_t,val)
-  assert A.get_scalar(rand_i,rand_j,rand_t) == val
+  A.set_scalar(rand_t,rand_j,rand_i,val)
+  assert A.get_scalar(rand_t,rand_j,rand_i) == val
 
 def test_set_scalar_warnings():
   A, slices = set_up_tensor(N, M, T)
@@ -311,12 +311,16 @@ def test_set_scalar_errors():
 def test_squeeze_passed_in_slice():
   X = sp.random(N,M,format='dok',density=.4)
   Y = sp.random(N,M, density=.4)
+  Z = np.random.rand(N,M)
+
   T = Tensor()
   tensor_X = T.squeeze(X)
   tensor_Y = T.squeeze(Y)
+  tensor_Z = T.squeeze(Z)
 
-  assert tensor_X.shape == (N,1,M)
+  assert tensor_X.shape == (N, 1, M)
   assert tensor_Y.shape == (N, 1, M)
+  assert tensor_Z.shape == (N, 1, M)
 
   #convert coo matrix to dok for access to elements
   Y = Y.todok()
@@ -324,19 +328,24 @@ def test_squeeze_passed_in_slice():
   for i in range(M):
     assert (tensor_X.get_frontal_slice(i) - X[:,i]).nnz == 0
     assert (tensor_Y.get_frontal_slice(i) - Y[:,i]).nnz == 0
+    assert (tensor_Z._slices[:,0,i] == Z[:,i]).all()
 
 
 def test_squeeze_in_place():
   A, slices = set_up_tensor(N,M,T,'csr')
   B, slices2 = set_up_tensor(N,M,T,'dok')
+  C, slices3 = set_up_tensor(N,M,T,dense=True)
 
   A.squeeze()
   B.squeeze()
+  C.squeeze()
 
   assert A.shape == (N,T,M)
   assert A._slice_format == 'dok'
   assert B.shape == (N,T,M)
   assert B._slice_format == 'dok'
+  assert C.shape == (N,T,M)
+
 
   for t in range(M):
     new_frontal_slice =  A._slices[t]
@@ -344,6 +353,9 @@ def test_squeeze_in_place():
     for j in range(T):
       assert (new_frontal_slice[:,j] -  slices[j][:,t] ).nnz == 0
       assert (new_frontal_slice2[:,j] - slices2[j][:,t]).nnz == 0
+      assert all(C._slices[:,j,t] == slices3[:,t,j])
+
+
 
 def test_squeeze_warnings():
   A, slices = set_up_tensor(N,M,T)
@@ -573,12 +585,19 @@ def test__mul__errors():
                               find max tests
 -----------------------------------------------------------------------------'''
 def test_find_max():
-  A, slices = set_up_tensor(N,M,T,format='dok')
+  A, _ = set_up_tensor(N,M,T,format='dok')
+  B, _ = set_up_tensor(N, M, T,format='csr')
+  C, _ = set_up_tensor(N, M, T, format='lil')
+  D, _ = set_up_tensor(N, M, T, dense=True)
 
   A.set_scalar(0,0,0,2)
+  B.set_scalar(0,0,0,2)
+  C.set_scalar(0,0,0,2)
+
 
   assert A.find_max() == 2
-
+  assert B.find_max() == 2
+  assert C.find_max() == 2
 
 '''-----------------------------------------------------------------------------
                               scale tensor tests
