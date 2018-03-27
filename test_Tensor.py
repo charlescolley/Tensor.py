@@ -507,7 +507,7 @@ def test_t_product_errors():
                             frobenius norm tests
 -----------------------------------------------------------------------------'''
 def test_frobenius_norm():
-  _, dense_slices = set_up_tensor(N,M,T,dense=True)
+  B, dense_slices = set_up_tensor(N,M,T,dense=True)
 
   sparse_slices = []
   for t in range(T):
@@ -515,6 +515,8 @@ def test_frobenius_norm():
 
   A = Tensor(sparse_slices)
   assert abs(A.frobenius_norm() - np_norm(dense_slices.reshape(N*M*T))) \
+         < ERROR_TOL
+  assert abs(B.frobenius_norm() - np_norm(dense_slices.reshape(N * M * T))) \
          < ERROR_TOL
 
 

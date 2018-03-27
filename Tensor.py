@@ -27,7 +27,7 @@
         get_scalar
         resize                SPARSE UNFINISHED
         transpose              DENSE UNTESTED
-        squeeze                DENSE UNTESTED
+        squeeze
         twist
         t-product
         scale_tensor
@@ -64,7 +64,7 @@ from itertools import izip
 from scipy.sparse.linalg import norm as sp_norm
 from scipy.fftpack import fft, ifft,rfft, fftshift, ifftshift, irfft
 from math import sqrt, hypot
-from numpy import ndarray, conj
+from numpy import ndarray, conj, NINF
 from numpy import zeros as np_zeros
 from numpy.linalg import norm as np_norm
 from warnings import warn
@@ -306,13 +306,13 @@ class Tensor:
 
 
     #insert slice in
-    if t > self.shape[2]:
+    if ts > self.shape[2]:
       for i in range(t - self.shape[2]-1):
         self._slices.append(sp.random(n,m,density=0,format=self._slice_format))
       self._slices.append(frontal_slice)
       self.shape = (n,m,t)
     else:
-      self._slices[t] = frontal_slice
+      self._slices[ts] = frontal_slices
 
   '''---------------------------------------------------------------------------
      _set_frontal_slice_validator(t,frontal_slice)
@@ -324,7 +324,7 @@ class Tensor:
   ---------------------------------------------------------------------------'''
   def _set_frontal_slice_validator(self,t,frontal_slice):
     # check for valid index
-    if abs(ts) > self.shape[2]:
+    if abs(t) > self.shape[2]:
       raise ValueError("out of bounds, 3rd mode index must be less than {} "
                        "or greater than -{}".format(self.shape[2],
                                                     self.shape[2]))
@@ -564,7 +564,10 @@ class Tensor:
       #check format
       if self._slice_format == 'dense':
         (N,M,T) = self.shape
-        self._slices = self._slices.reshape((N,T,M))
+        new_slices = ndarray((N,T,M))
+        for t in xrange(T):
+          new_slices[:,t,:] = self._slices[:,:,t]
+        self._slices = new_slices
         self.shape = (N,T,M)
       else:
         if self._slice_format == 'coo':
@@ -743,7 +746,10 @@ class Tensor:
        function for numerical stability. 
   ---------------------------------------------------------------------------'''
   def frobenius_norm(self):
-    return np_norm(map(lambda x: sp_norm(x,ord='fro'),self._slices))
+    if self._slice_format == 'dense':
+      return sqrt(reduce(lambda x,y: x + y**2,self._slices.flat,0))
+    else:
+      return np_norm(map(lambda x: sp_norm(x,ord='fro'),self._slices))
 
   '''---------------------------------------------------------------------------
      norm()
@@ -786,7 +792,30 @@ class Tensor:
        This function returns the largest element of the tensor.
   ---------------------------------------------------------------------------'''
   def find_max(self):
-    return max(map(lambda x: x.max(),self._slices))
+    if self._slice_format == 'dense':
+      return self._slices.max()
+    else:
+      if self._slice_format == 'dok':
+        max = NINF
+        (N,M,T) = self.shape
+        for t in xrange(T):
+          for val in self._slices[t].itervalues():
+            if val > max:
+              max = val
+
+        return max
+      else:
+        if self._slice_format in ['dia','lil']:
+          reducing_func = lambda x,y: max(x,y.tocoo().max())
+          initial_val = (self._slices[0].tocoo()).max()
+        else:
+          reducing_func = lambda x,y: max(x,y.max())
+          initial_val = self._slices[0].max()
+
+
+        return reduce(reducing_func,self._slices[1:],initial_val)
+
+
 
   '''---------------------------------------------------------------------------
      is_equal_to_tensor(other,tol)
@@ -1093,18 +1122,7 @@ import os
 def main():
   os.chdir('/home/ccolle01/Documents/Tensor.py')
   A = Tensor('demo')
-  V,a = normalize(A[:,0,:])
-  A = A[:,0,:]
-  X = V * a
-
-  print A._slices[0].todense()
-  print X._slices[0].todense()
-  print a.shape
-  (_,_,T) = A.shape
-
-  print V.norm()
-  print V.frobenius_norm()
-
+  print A.find_max()
 
 if __name__ == "__main__":
   main()
