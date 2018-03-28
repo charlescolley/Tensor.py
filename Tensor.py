@@ -29,10 +29,10 @@
         transpose              DENSE UNTESTED
         squeeze
         twist
-        t-product
+        t-product                    WRITE DENSE CASE
         scale_tensor
-        find_max                     UNTESTED
-        is_equal_to_tensor           UNTESTED
+        find_max
+        is_equal_to_tensor           UNTESTED/WRITE DENSE CASE
         frobenius_norm               UNTESTED
         norm                         UNTESTED
         cos_distance
@@ -50,9 +50,9 @@
 
 
   TODO: -write a reshape function
+        -update the convert slices to convert to dense or to sparse
         -write random Tensor
         -write print overloading
-        -write todense function
         -add in non-zero count private element?
 --------------------------------------------------------------------------------
   Dependencies
@@ -864,6 +864,38 @@ class Tensor:
       comp = lambda x,y: x == y
 
     if isinstance(other, Tensor):
+      if self.shape == other.shape:
+        if self._is_equal_helper(other,comp):
+          return other._is_equal_helper(self,comp)
+        else:
+          return False
+      else:
+        return False
+    else:
+      return False
+
+  def _is_equal_helper(self,other,comp):
+
+    if other._slice_format == 'dense':
+      for t in xrange(self.shape[2]):
+        if self._slice_format == 'dok':
+          for ((i,j),v) in self._slices[t].iteritems():
+            if not comp(other._slices[i,j,t],v):
+              return False
+        elif self._slice_format == 'dense':
+          for i in xrange(self.shape[0]):
+            for j in xrange(self.shape[1]):
+              if not comp(other._slices[i,j,t],self._slices[i,j,t]):
+                return False
+        else:
+          if self._slice_format == 'coo':
+            slice = self._slices[t]
+          else:  # other matrix forms are faster to convert to coo to check
+            slice = self._slices[t].tocoo()
+          for (i, j, v) in izip(slice.row, slice.col, slice.data):
+            if not comp(other._slices[i,j,t], v):
+              return False
+    else:
       for t in xrange(self.shape[2]):
         # if other is of type coo, change to something one can index into
         if other._slice_format == 'coo':
@@ -876,17 +908,20 @@ class Tensor:
           for ((i, j), v) in self._slices[t].iteritems():
             if not comp(other_slice[i, j], v):
               return False
+        elif self._slice_format == 'dense':
+          for i in xrange(self.shape[0]):
+            for j in xrange(self.shape[1]):
+              if not comp(self._slices[i,j,t],other_slice[i,j]):
+                return False
         else:
           if self._slice_format == 'coo':
             slice = self._slices[t]
           else:  # other matrix forms are faster to convert to coo to check
             slice = self._slices[t].tocoo()
           for (i, j, v) in izip(slice.row, slice.col, slice.data):
-            if not comp(other_slice[i, j],v):
+            if not comp(other_slice[i, j], v):
               return False
-      return True
-    else:
-      return False
+    return True
 
   '''---------------------------------------------------------------------------
      todense(make_new)

@@ -537,6 +537,10 @@ def test_frobenius_norm():
                               norm tests
 -----------------------------------------------------------------------------'''
 
+
+
+
+
 '''-----------------------------------------------------------------------------
                               __add__/__sub__ tests
 -----------------------------------------------------------------------------'''
@@ -613,6 +617,29 @@ def test_find_max():
   assert A.find_max() == 2
   assert B.find_max() == 2
   assert C.find_max() == 2
+
+'''-----------------------------------------------------------------------------
+                              is_equal_to_tensor tests
+-----------------------------------------------------------------------------'''
+def test_is_equal_to_tensor():
+  A, slices1 = set_up_tensor(N, M, T, format='csr')
+  B, slices2 = set_up_tensor(N, M, T, format='dok')
+  C, slices3 = set_up_tensor(N, M, T, dense=True)
+
+
+  assert A.is_equal_to_tensor(A)
+  assert not A.is_equal_to_tensor(B)
+  assert not A.is_equal_to_tensor(C)
+
+  assert B.is_equal_to_tensor(B)
+  assert not B.is_equal_to_tensor(C)
+
+  assert C.is_equal_to_tensor(C)
+
+  assert not A.is_equal_to_tensor([1,2,3])
+  assert not A.is_equal_to_tensor(3)
+  assert not A.is_equal_to_tensor('test')
+
 
 '''-----------------------------------------------------------------------------
                               scale tensor tests
