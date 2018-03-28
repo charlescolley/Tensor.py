@@ -380,11 +380,15 @@ def test_twist():
   matrix = sp.random(N,M,density=.5,format='dok')
   matrix2 = sp.random(N,M,density=0,format='dok')
   matrix3 = sp.random(N,M,density=.5,format='lil')
+  matrix4 = np.random.rand(N,M)
 
   slices = []
   slices2 = []
   slices3 = []
+  slices4 = np.ndarray((N, 1, M))
+
   for j in xrange(M):
+    slices4[:,0,j] = matrix4[:,j]
     slices.append(matrix[:,j])
     slices3.append(matrix3[:,j])
     slices2.append(sp.random(N,1,density=.5,format='coo'))
@@ -393,10 +397,12 @@ def test_twist():
   A = Tensor(slices)
   A2 = Tensor(slices2)
   A3 = Tensor(slices3)
+  A4 = Tensor(slices4)
 
   B = A.twist(A)
   B2 = A.twist(A2)
   B3 = A.twist(A3)
+  B4 = A.twist(A4)
 
   assert  B.shape[0] == N
   assert  B.shape[1] == M
@@ -410,16 +416,23 @@ def test_twist():
   assert  B3.shape[1] == M
   assert (B3 - matrix3).nnz == 0
 
+  assert B4.shape[0] == N
+  assert B4.shape[1] == M
+  assert (B4 == matrix4).all()
+
   assert (matrix - A.twist(A.squeeze(matrix))).nnz == 0
   assert (matrix2 - A.twist(A.squeeze(matrix2))).nnz == 0
   assert (matrix3 - A.twist(A.squeeze(matrix3))).nnz == 0
+  assert (matrix4 == A.twist(A.squeeze(matrix4))).all()
 
   A.twist()
   A2.twist()
   A3.twist()
+  A4.twist()
   assert A._slice_format == 'dok'
   assert A2._slice_format == 'coo'
   assert A3._slice_format == 'lil'
+  assert A4._slice_format == 'dense'
 
 def test_twist_errors():
   A, slices = set_up_tensor(N,M,T)

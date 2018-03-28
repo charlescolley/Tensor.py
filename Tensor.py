@@ -606,13 +606,14 @@ class Tensor:
                             X = squeeze(twist(X))
      Input:
        X - (optional n x 1 x m Tensor)
-         This is a lateral slice to be converted to a sparse matrix. Note 
+         This is a lateral slice to be converted to a matrix. Note 
          that if no tensor is passed in, then the routine is run on each of 
          the frontal slices of the current instance of the Tensor the 
          function is called on. 
      Returns:
-       Z - (sparse dok matrix)
-         a sparse matrix corresponding to the lateral slice 
+       Z - (sparse dok matrix or ndarray)
+         a matrix corresponding to the lateral slice. The type is determined 
+         by whether the input tensor is dense or sparse. 
   ---------------------------------------------------------------------------'''
   def twist(self, X = None):
     if X is not None:
@@ -624,39 +625,53 @@ class Tensor:
                          " not 1,\n if you wish to twist this tensor, "
                          "call twist() on that instance".format(X.shape[1]))
       else:
-        Z = sp.random(X.shape[0],X.shape[2],format='dok',density=0)
-        for t in range(X.shape[2]):
-
-          slice = X._slices[t]
-          if X._slice_format == 'dok':
-            for ((i,_),v) in slice.iteritems():
-              Z[i,t] = v
-          else:
-            if X._slice_format != 'coo':
-              slice = slice.tocoo()
-            for (i,_,v) in izip(slice.row,slice.col,slice.data):
-              Z[i,t] = v
-        return Z
-    else:
-      new_slices = []
-      for j in xrange(self.shape[1]):
-        new_slices.append(sp.random(self.shape[0],self.shape[2],
-                                    density=0, format='dok'))
-
-      for t in xrange(self.shape[2]):
-        if self._slice_format == 'dok':
-          for ((i,j), v) in self._slices[t].iteritems():
-            new_slices[j][i,t] = v
+        if X._slice_format == 'dense':
+          Z = ndarray((X.shape[0],X.shape[2]))
+          for i in xrange(X.shape[0]):
+            for j in xrange(X.shape[2]):
+              Z[i,j] = X._slices[i, 0, j]
+          return Z
         else:
-          slice = self._slices[t]
-          if self._slice_format != 'coo':
-            slice = slice.tocoo()
-          for (i,j,v) in izip(slice.row,slice.col,slice.data):
-            new_slices[j][i,t] = v
+          Z = sp.random(X.shape[0],X.shape[2],format='dok',density=0)
+          for t in range(X.shape[2]):
 
-      #convert slices back to original format
-      if self._slice_format != 'dok':
-        new_slices = map(lambda x:x.asformat(self._slice_format),new_slices)
+            slice = X._slices[t]
+            if X._slice_format == 'dok':
+              for ((i,_),v) in slice.iteritems():
+                Z[i,t] = v
+            else:
+              if X._slice_format != 'coo':
+                slice = slice.tocoo()
+              for (i,_,v) in izip(slice.row,slice.col,slice.data):
+                Z[i,t] = v
+          return Z
+    else:
+      if self._slice_format == 'dense':
+        new_slices = ndarray((self.shape[0],self.shape[2],self.shape[1]))
+        for i in xrange(self.shape[0]):
+          for j in xrange(self.shape[1]):
+            for t in xrange(self.shape[2]):
+              new_slices[i,t,j] = self._slices[i,j,t]
+      else:
+        new_slices = []
+        for j in xrange(self.shape[1]):
+          new_slices.append(sp.random(self.shape[0],self.shape[2],
+                                      density=0, format='dok'))
+
+        for t in xrange(self.shape[2]):
+          if self._slice_format == 'dok':
+            for ((i,j), v) in self._slices[t].iteritems():
+              new_slices[j][i,t] = v
+          else:
+            slice = self._slices[t]
+            if self._slice_format != 'coo':
+              slice = slice.tocoo()
+            for (i,j,v) in izip(slice.row,slice.col,slice.data):
+              new_slices[j][i,t] = v
+
+        #convert slices back to original format
+        if self._slice_format != 'dok':
+          new_slices = map(lambda x:x.asformat(self._slice_format),new_slices)
 
       self._slices = new_slices
       self._shape = (self.shape[0],self.shape[2],self.shape[1])
