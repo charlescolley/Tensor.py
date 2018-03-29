@@ -20,7 +20,7 @@
       Public Methods:
         save
         load
-        convert_slices(format)
+        convert_slices
         set_frontal_slice
         get_front_slice
         set_scalar
@@ -32,10 +32,10 @@
         t-product                    WRITE DENSE CASE
         scale_tensor
         find_max
-        is_equal_to_tensor           UNTESTED/WRITE DENSE CASE
+        is_equal_to_tensor
         frobenius_norm               UNTESTED
         norm                         UNTESTED
-        cos_distance
+        cos_distance m
         to_dense
       Overloaded Methods:
         __add__
@@ -43,7 +43,9 @@
         __mul__                      UNTESTED
         __neg__
         __eq__                       UNTESTED
-
+        __ne
+        __getitem__                  DENSE UNTESTED
+        __setitem__                  UNWRITTEN
     Class utilization
       zeros
       normalize
@@ -163,21 +165,24 @@ class Tensor:
     return not self.__eq__(other)
 
   def __getitem__(self, key):
-    if  isinstance(key,slice) or isinstance(key,int):
+    if self._slice_format == 'dense':
       return Tensor(self._slices[key])
-    elif len(key) == 2:
-      if isinstance(key[0],slice):
-        return Tensor(map(lambda x: x[:,key[1]],self._slices[key[0]]))
-      else:
-        return Tensor([self._slices[key[0]][:,key[1]]])
-    elif len(key) == 3:
-      if isinstance(key[0],slice):
-        return Tensor(map(lambda x: x[key[0],key[1]],self._slices[key[2]]))
-      else:
-        return Tensor([self._slices[key[0]][key[2],key[1]]])
     else:
-      raise(ValueError("invalid amount of indices/slices, {} found, must add "
-                       "at most 3 indices and/or slices.".format(len(key))))
+      if  isinstance(key,slice) or isinstance(key,int):
+        return Tensor(self._slices[key])
+      elif len(key) == 2:
+        if isinstance(key[0],slice):
+          return Tensor(map(lambda x: x[:,key[1]],self._slices[key[0]]))
+        else:
+          return Tensor([self._slices[key[0]][:,key[1]]])
+      elif len(key) == 3:
+        if isinstance(key[0],slice):
+          return Tensor(map(lambda x: x[key[0],key[1]],self._slices[key[2]]))
+        else:
+          return Tensor([self._slices[key[0]][key[2],key[1]]])
+      else:
+        raise(ValueError("invalid amount of indices/slices, {} found, must add "
+                         "at most 3 indices and/or slices.".format(len(key))))
 
   def __setitem__(self, key, value):
     pass
@@ -276,11 +281,14 @@ class Tensor:
         t - (int)
           index of the slice to return
       Returns:
-        slice - (sparse scipy matrix)
+        slice - (sparse scipy matrix or ndarray)
           the t-th slice
   ---------------------------------------------------------------------------'''
   def get_frontal_slice(self,t):
-    return self._slices[t]
+    if self._slice_format == 'dense':
+      return self._slices[:,:,t]
+    else:
+      return self._slices[t]
 
   '''---------------------------------------------------------------------------
       get_frontal_slice(t)
@@ -296,23 +304,13 @@ class Tensor:
   def set_frontal_slice(self, ts, frontal_slices):
 
     #check for valid inputs
-    if isinstance(ts,int):
+    if isinstance(ts,int) or isinstance(ts,slice):
       self._set_frontal_slice_validator(ts,frontal_slices)
-    elif isinstance(ts,slice):
-      raise NotImplementedError('finish set frontal')
     else:
       raise(TypeError("ts are not an integer or slice, ts are of type {"
                       "}".format(type(ts))))
 
-
-    #insert slice in
-    if ts > self.shape[2]:
-      for i in range(t - self.shape[2]-1):
-        self._slices.append(sp.random(n,m,density=0,format=self._slice_format))
-      self._slices.append(frontal_slice)
-      self.shape = (n,m,t)
-    else:
-      self._slices[ts] = frontal_slices
+    self._slices[ts] = frontal_slices
 
   '''---------------------------------------------------------------------------
      _set_frontal_slice_validator(t,frontal_slice)
@@ -323,23 +321,28 @@ class Tensor:
        are raised here.  
   ---------------------------------------------------------------------------'''
   def _set_frontal_slice_validator(self,t,frontal_slice):
-    # check for valid index
-    if abs(t) > self.shape[2]:
-      raise ValueError("out of bounds, 3rd mode index must be less than {} "
-                       "or greater than -{}".format(self.shape[2],
-                                                    self.shape[2]))
+    if isinstance(t,int):
 
-    # check for correct type
-    n = self.shape[0]
-    m = self.shape[1]
-    if not sp.issparse(frontal_slice):
-      raise TypeError("slice is not a scipy sparse matrix, slice passed in "
-                      "is of type {}\n".format(type(frontal_slice)))
-    if frontal_slice.shape != (n, m):
-      raise ValueError("slice shape is invalid, slice must be of "
-                       "shape ({},"
-                       "{}), slice passed in is of shape {}\n", n, m,
-                       frontal_slice.shape)
+
+
+      # check for valid index
+      if abs(t) > self.shape[2]:
+        raise ValueError("out of bounds, 3rd mode index must be less than {} "
+                         "or greater than -{}".format(self.shape[2],
+                                                      self.shape[2]))
+
+      # check for correct type
+      n = self.shape[0]
+      m = self.shape[1]
+      if not sp.issparse(frontal_slice) and not isinstance(frontal_slice,ndarray):
+        raise TypeError("slice is not a scipy sparse matrix or ndarray, "
+                        "slice passed in is of type {}\n".format(type(frontal_slice)))
+      if frontal_slice.shape != (n, m):
+        raise ValueError("slice shape is invalid, slice must be of "
+                         "shape ({},"
+                         "{}), slice passed in is of shape {}\n", n, m,
+                         frontal_slice.shape)
+
 
   '''---------------------------------------------------------------------------
       _set_frontal_slice_formatter(frontal_slice)
