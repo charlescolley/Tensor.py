@@ -1,64 +1,5 @@
-'''-----------------------------------------------------------------------------
-    This is a class of 3rd order sparse tensors which is designed to support
-    the t-product.
-
-    Tensor Class
-      Private:
-        _slices - (list of sparse matrices or 3rd order ndarray)
-         a list of sparse scipy matrices which represents the frontal slices of
-         the tensor, i.e. the t-th element of the list will be the matrix
-         A[:,:,t]. All slices will be the same type of sparse matrix. If
-         slices is passed in as an ndarray, then it must only have 3
-         dimensions.
-        _slice_format - (string)
-         a string indicating the sparse matrix format of each of the frontal
-         slices in the tensor. If _slices is an ndarray it will be set to
-         'dense'
-        shape - (tuple of ints)
-         a tuple with the shape of the tensor. The ith element of shape
-         corresponds to the dimension of the ith mode.
-      Public Methods:
-        save
-        load
-        convert_slices
-        set_frontal_slice
-        get_front_slice
-        set_scalar
-        get_scalar
-        resize                SPARSE UNFINISHED
-        transpose              DENSE UNTESTED
-        squeeze
-        twist
-        t-product                    WRITE DENSE CASE
-        scale_tensor
-        find_max
-        is_equal_to_tensor
-        frobenius_norm               UNTESTED
-        norm                         UNTESTED
-        cos_distance m
-        to_dense
-      Overloaded Methods:
-        __add__
-        __sub__
-        __mul__                      UNTESTED
-        __neg__
-        __eq__                       UNTESTED
-        __ne
-        __getitem__                  DENSE UNTESTED
-        __setitem__                  UNWRITTEN
-    Class utilization
-      zeros
-      normalize
-
-
-  TODO: -write a reshape function
-        -update the convert slices to convert to dense or to sparse
-        -write random Tensor
-        -write print overloading
-        -add in non-zero count private element?
---------------------------------------------------------------------------------
-  Dependencies
------------------------------------------------------------------------------'''
+#  Dependencies
+#-----------------------------------------------------------------------------
 import os
 import scipy.sparse as sp
 import pickle
@@ -73,12 +14,73 @@ from warnings import warn
 from numbers import Number
 
 
+import test_Tensor as T
+
 
 '''-----------------------------------------------------------------------------
   Core Class
 -----------------------------------------------------------------------------'''
 
 class Tensor:
+  '''
+      This is a class of 3rd order sparse tensors which is designed to support
+      the t-product.
+
+      Tensor Class
+        Private:
+          _slices - (list of sparse matrices or 3rd order ndarray)
+           a list of sparse scipy matrices which represents the frontal slices of
+           the tensor, i.e. the t-th element of the list will be the matrix
+           A[:,:,t]. All slices will be the same type of sparse matrix. If
+           slices is passed in as an ndarray, then it must only have 3
+           dimensions.
+          _slice_format - (string)
+           a string indicating the sparse matrix format of each of the frontal
+           slices in the tensor. If _slices is an ndarray it will be set to
+           'dense'
+          shape - (tuple of ints)
+           a tuple with the shape of the tensor. The ith element of shape
+           corresponds to the dimension of the ith mode.
+        Public Methods:
+          save
+          load
+          convert_slices
+          set_frontal_slice
+          get_front_slice
+          set_scalar
+          get_scalar
+          resize                SPARSE UNFINISHED
+          transpose              DENSE UNTESTED
+          squeeze
+          twist
+          t-product                    WRITE DENSE CASE
+          scale_tensor
+          find_max
+          is_equal_to_tensor
+          frobenius_norm               UNTESTED
+          norm                         UNTESTED
+          cos_distance m
+          to_dense
+        Overloaded Methods:
+          __add__
+          __sub__
+          __mul__                      UNTESTED
+          __neg__
+          __eq__                       UNTESTED
+          __ne
+          __getitem__                  DENSE UNTESTED
+          __setitem__                  UNWRITTEN
+      Class utilization
+        zeros
+        normalize
+
+
+    TODO: -write a reshape function
+          -update the convert slices to convert to dense or to sparse
+          -write random Tensor
+          -write print overloading
+          -add in non-zero count private element?
+  '''
 
   def __init__(self, slices = None):
 
@@ -185,34 +187,37 @@ class Tensor:
                          "at most 3 indices and/or slices.".format(len(key))))
 
   def __setitem__(self, key, value):
-    pass
+    if self._slice_format == "dense":
+      if isinstance(value,ndarray):
+        print key
+        self._slices = self._slices[key] = value
+      else:
+        pass
 
-  '''---------------------------------------------------------------------------
-    save(file_name)
-      This function takes in a file name and uses the pickle module to save 
-      the Tensor intance.
+
+  def save(self, file_name):
+    '''
+    This function takes in a file name and uses the pickle module to save
+    the Tensor instance.
     Input:
       file_name - (string)
         The name of the file to save the tensor.
-  ---------------------------------------------------------------------------'''
-  def save(self, file_name):
+    '''
     with open(file_name,'w') as handle:
       pickle.dump([self._slices,self._slice_format,self.shape],handle)
 
-
-  '''---------------------------------------------------------------------------
-    load(file_name)
-      This function takes in a file name and loads in into the current tensor 
-      instance, if the make_new flag is true it will return a new instance of a 
-      tensor. 
+  def load(self,file_name, make_new = False):
+    '''
+    This function takes in a file name and loads in into the current tensor
+    instance, if the make_new flag is true it will return a new instance of a
+    tensor.
     Input:
       file_name - (string)
         The name of the file to load the tensor from.
       make_new - (bool)
         Optional bool which indicates whether or not to create a new instance of
-        a tensor, or just copy it into the current instance. 
-  ---------------------------------------------------------------------------'''
-  def load(self,file_name, make_new = False):
+        a tensor, or just copy it into the current instance.
+    '''
     with open(file_name,'r') as handle:
       private_elements = pickle.load(handle)
 
@@ -223,20 +228,20 @@ class Tensor:
       self._slice_format = private_elements[1]
       self.shape = private_elements[2]
 
-  '''---------------------------------------------------------------------------
-      convert_slices(format)
-        This function will convert all of the slices to a desired sparse matrix 
-        format, this derives its functionality from the scipy.sparse._.asformat 
-        function. To convert to a dense tensor, use todense(). 
-      Input:
-        format- (string)
-          string that specifies the possible formats, valid formats are the 
-          supported formats of scipy sparse matrices. see scipy reference for
-          most up to date supported formats
-      References:
-        https://docs.scipy.org/doc/scipy/reference/sparse.html
-  ---------------------------------------------------------------------------'''
+
   def convert_slices(self,format):
+    '''
+          This function will convert all of the slices to a desired sparse matrix
+          format, this derives its functionality from the scipy.sparse._.asformat
+          function. To convert to a dense tensor, use todense().
+        Input:
+          format- (string)
+            string that specifies the possible formats, valid formats are the
+            supported formats of scipy sparse matrices. see scipy reference for
+            most up to date supported formats
+        References:
+          https://docs.scipy.org/doc/scipy/reference/sparse.html
+    '''
     if self._slice_format == "dense":
       raise AttributeError("this function is for sparse tensors\n")
     else:
@@ -244,20 +249,20 @@ class Tensor:
         self._slices[t] = slice.asformat(format)
       self._slice_format = format
 
-  '''---------------------------------------------------------------------------
-     resize(shape,order)
-         This function takes in a 3 tuple and resizes the tensor according to 
-       the dimension of the values passed into the tuple. The method will 
-       default to row major order (C like) but may be done in col major order 
-       (Fortran like). 
-     Input:
-       shape - (tuple or list of postive ints)
-         a tuple or list with at most length 3 which has the appropriate shapes.
-       order - (optional character)
-         a character indicating whether or not to use column or row major 
-         formatting for the reshape.
-  ---------------------------------------------------------------------------'''
   def resize(self,shape,order = 'C'):
+    '''
+    This function takes in a 3 tuple and resizes the tensor according to
+    the dimension of the values passed into the tuple. The method will
+    default to row major order (C like) but may be done in col major order
+    (Fortran like).
+
+    Input:
+      shape - (tuple or list of postive ints)
+        a tuple or list with at most length 3 which has the appropriate shapes.
+      order - (optional character)
+        a character indicating whether or not to use column or row major
+        formatting for the reshape.
+    '''
     if not isinstance(shape,list) and not isinstance(shape,tuple):
       raise TypeError('shape is not a valid list or tuple, shape is of type {'
                       '}'.format(type(shape)))
@@ -274,34 +279,38 @@ class Tensor:
       self._shape = shape
     else:
       raise NotImplementedError("resize needs to have the sparse case finished")
-  '''---------------------------------------------------------------------------
-      get_frontal_slice(t)
-        returns the t-th frontal slice. Paired with set_slice().
-      Input: 
-        t - (int)
-          index of the slice to return
-      Returns:
-        slice - (sparse scipy matrix or ndarray)
-          the t-th slice
-  ---------------------------------------------------------------------------'''
+
   def get_frontal_slice(self,t):
+    '''
+    returns the t-th frontal slice. Paired with set_slice().
+    Input:
+      t - (int)
+        index of the slice to return
+    Returns:
+      slice - (sparse scipy matrix or ndarray)
+        the t-th slice
+    '''
     if self._slice_format == 'dense':
       return self._slices[:,:,t]
     else:
       return self._slices[t]
 
-  '''---------------------------------------------------------------------------
-      get_frontal_slice(t)
-          replaces the t-th frontal slice. Paired with get_slice().
-        Input: 
-          ts - (int or slice)
-            index or slice object of the slices to replace. t must be in 
-            range of the number of frontal slices. Use a constructor to 
-            create larger Tensors. 
-          frontal_slice - (sparse scipy matrix)
-            the new t-th slice
-  ---------------------------------------------------------------------------'''
+
   def set_frontal_slice(self, ts, frontal_slices):
+    '''
+    replaces the t-th frontal slice. Paired with get_slice().
+
+    Input:
+      ts - (int or slice)
+        index or slice object of the slices to replace. t must be in
+        range of the number of frontal slices. Use a constructor to
+        create larger Tensors.
+      frontal_slice - (sparse scipy matrix)
+        the new t-th slice
+
+    TODO:
+      Update to match scipy.sparse and ndarray setting interface.
+    '''
 
     #check for valid inputs
     if isinstance(ts,int) or isinstance(ts,slice):
@@ -312,18 +321,16 @@ class Tensor:
 
     self._slices[ts] = frontal_slices
 
-  '''---------------------------------------------------------------------------
-     _set_frontal_slice_validator(t,frontal_slice)
-         This function is a helper function for determining if the inputs are 
-       valid in the set_frontal_slice function. t is either ts, or an element in
-       the slice object, frontal slice is one of the matrices passed into 
-       set_frontal_slice. This is separated from the formatter as the errors 
-       are raised here.  
-  ---------------------------------------------------------------------------'''
+
   def _set_frontal_slice_validator(self,t,frontal_slice):
+    '''
+    This function is a helper function for determining if the inputs are
+    valid in the set_frontal_slice function. t is either ts, or an element in
+    the slice object, frontal slice is one of the matrices passed into
+    set_frontal_slice. This is separated from the formatter as the errors
+    are raised here.
+    '''
     if isinstance(t,int):
-
-
 
       # check for valid index
       if abs(t) > self.shape[2]:
@@ -343,42 +350,40 @@ class Tensor:
                          "{}), slice passed in is of shape {}\n", n, m,
                          frontal_slice.shape)
 
-
-  '''---------------------------------------------------------------------------
-      _set_frontal_slice_formatter(frontal_slice)
-        This function is a helper function for set_frontal_slice. It will 
-        convert the slice to the current tensor slice_format. Warnings are 
-        raised if the format is the not the same. 
-      Note:
-        may be good to only raise an error once so it doesn't burden the 
-        user's stderr for large T. 
-  ---------------------------------------------------------------------------'''
   def _set_frontal_slice_formatter(self,frontal_slice):
+    '''
+            This function is a helper function for set_frontal_slice. It will
+          convert the slice to the current tensor slice_format. Warnings are
+          raised if the format is the not the same.
+        Note:
+          may be good to only raise an error once so it doesn't burden the
+          user's stderr for large T.
+    '''
     if frontal_slice.getformat() != self._slice_format:
       warn("converting frontal slice to format {}\n".
            format(self._slice_format), UserWarning)
 
-  '''---------------------------------------------------------------------------
-      set_scalar(i,j,k,scalar)
-          This function sets i,j,k element of the tensor to be the value 
-         passed as the scalar variable.Note that because COO matrices don't 
-         support assignment, the tensor must be converted. paired with the 
-         get_scalar function.
-      Input:
-        i - (integer)
-          The mode 1 index to insert the scalar
-        j - (integer)
-          The mode 2 index to insert the scalar
-        k - (integer)
-         The mode 3 index to insert the scalar
-        scalar - (scalar type)
-          The value to be inserted into the tensor, will be cast to the type 
-          of whatever type of matrix the slices are comprised of. 
-    TODO:
-     -expand the tensor when the use passes an index out of range of the 
-      current  
-  ---------------------------------------------------------------------------'''
   def set_scalar(self,k,j,i,scalar):
+    '''
+    This function sets i,j,k element of the tensor to be the value
+    passed as the scalar variable.Note that because COO matrices don't
+    support assignment, the tensor must be converted. paired with the
+    get_scalar function.
+
+    Input:
+      i - (integer)
+        The mode 1 index to insert the scalar
+      j - (integer)
+        The mode 2 index to insert the scalar
+      k - (integer)
+       The mode 3 index to insert the scalar
+      scalar - (scalar type)
+        The value to be inserted into the tensor, will be cast to the type
+        of whatever type of matrix the slices are comprised of.
+    TODO:
+     -expand the tensor when the use passes an index out of range of the
+      current
+    '''
 
     if not isinstance(scalar,Number):
       raise TypeError("scalar must be a subclass of Number, scalar passed "
@@ -403,22 +408,23 @@ class Tensor:
 
     self._slices[k][i,j] = scalar
 
-  '''---------------------------------------------------------------------------
-      get_scalar(k,j,i)
-        This function gets the i,j,k element of the tensor. paired with the 
-        set_scalar function. 
-      Input:
-        i - (integer)
-          The mode 1 index to insert the scalar
-        j - (integer)
-          The mode 2 index to insert the scalar
-        k - (integer)
-         The mode 3 index to insert the scalar
-      Returns:
-        A[i,j,k] - (scalar number)
-          returns the value at the i,j element of the kth frontal slice. 
-  ---------------------------------------------------------------------------'''
   def get_scalar(self,k,j,i):
+    '''
+    This function gets the i,j,k element of the tensor. paired with the
+    set_scalar function.
+
+    Input:
+      i - (integer)
+        The mode 1 index to insert the scalar
+      j - (integer)
+        The mode 2 index to insert the scalar
+      k - (integer)
+       The mode 3 index to insert the scalar
+    Returns:
+      A[i,j,k] - (scalar number)
+        returns the value at the i,j element of the kth frontal slice.
+    '''
+
     #check bounds of i,j,k
     if abs(i) > self.shape[0]:
       raise ValueError("i index out of bounds, must be in the domain [-{},"
@@ -438,24 +444,25 @@ class Tensor:
     else:
       return self._slices[k][i,j]
 
-  '''---------------------------------------------------------------------------
-      transpose(inPlace)
-        creates a new instance a tensor class such that the frontal slices 
-        are transposed, and the 2nd through nth slices are flipped. Has the 
-        option of returning a new instance, or in place. 
-      Input:
-        InPlace - (optional bool)
-          A boolean indicating whether or not to alter the current tensor, 
-          or produce a new one. 
-      Return:
-        Tensor Instance
-          if InPlace is false, then this function returns a new tensor 
-          instance. 
-      Note: 
-        In the dense case, need to find out when np.reshape will create a 
-        copy of the data undert the hood. 
-  ---------------------------------------------------------------------------'''
   def transpose(self, inPlace = False):
+    '''
+    creates a new instance a tensor class such that the frontal slices
+    are transposed, and the 2nd through nth slices are flipped. Has the
+    option of returning a new instance, or in place.
+
+    Input:
+      InPlace - (optional bool)
+        A boolean indicating whether or not to alter the current tensor,
+        or produce a new one.
+    Return:
+      Tensor Instance
+        if InPlace is false, then this function returns a new tensor
+        instance.
+    Note:
+      In the dense case, need to find out when np.reshape will create a
+      copy of the data under the hood.
+    '''
+
     (N, M, T) = self.shape
     if self._slice_format == "dense":
       if inPlace and N == M:
@@ -517,29 +524,29 @@ class Tensor:
         new_slices.insert(0,self._slices[0].T)
         return Tensor(new_slices)
 
-  '''---------------------------------------------------------------------------
-     squeeze()
-       This function takes in either an n x m matrix and will return a 
-       (n x 1 x m) Tensor. This corresponds to thinking of the matrix as a 
-       frontal slice, and having the function return it as a lateral slice. 
-       Note that if no matrix is passed in, then this function will apply the
-       squeeze function to each one of the frontal slices of the current 
-       instance of the tensor. Note that this function is paired with the 
-       twist function as an inverse i.e.   
-                            X = twist(squeeze(X))
-       It should be noted that X will be a dok sparse matrix after the 
-       functio calls. 
-     Input:
-       X - (optional n x m sparse matrix or ndarray)
-         A sparse matrix or ndarrayto be squeezed. Note if none is passed in, 
-         then each frontal slice in self._slices will be squeezed and the instance of 
-         the Tensor calling this function will be altered. 
-     Returns:
-       Z - (n x 1 x m Tensor)
-         A tensor corresponding to a single lateral slice. Doesn't return 
-         anything if no X is passed in. 
-  ---------------------------------------------------------------------------'''
   def squeeze(self, X = None):
+    '''
+    This function takes in either an n x m matrix and will return a
+    (n x 1 x m) Tensor. This corresponds to thinking of the matrix as a
+    frontal slice, and having the function return it as a lateral slice.
+    Note that if no matrix is passed in, then this function will apply the
+    squeeze function to each one of the frontal slices of the current
+    instance of the tensor. Note that this function is paired with the
+    twist function as an inverse i.e.
+                        X = twist(squeeze(X))
+    It should be noted that X will be a dok sparse matrix after the
+    function calls.
+    Input:
+      X - (optional n x m sparse matrix or ndarray)
+        A sparse matrix or ndarrayto be squeezed. Note if none is passed in,
+           then each frontal slice in self._slices will be squeezed and the
+           instance of the Tensor calling this function will be altered.
+    Returns:
+      Z - (n x 1 x m Tensor)
+        A tensor corresponding to a single lateral slice. Doesn't return
+        anything if no X is passed in.
+    '''
+
     if X is not None:
       if sp.issparse(X):
         n = X.shape[0]
@@ -599,26 +606,26 @@ class Tensor:
         self.shape = (n,T,m)
         self._slice_format = 'dok'
 
-  '''---------------------------------------------------------------------------
-     twist(X)
-       This function takes in an optional n x 1 x m tensor X and returns a 
-       sparse n x m matrix corresponding to rotating the lateral slice to a 
-       frontal slice. If no tensor is passed in, the algorithm is run on each of
-       frontal slices of the tensor this routine is being called on. Note 
-       that this is the inverse function of the squeeze function, i.e. 
-                            X = squeeze(twist(X))
-     Input:
-       X - (optional n x 1 x m Tensor)
-         This is a lateral slice to be converted to a matrix. Note 
-         that if no tensor is passed in, then the routine is run on each of 
-         the frontal slices of the current instance of the Tensor the 
-         function is called on. 
+  def twist(self, X = None):
+    '''
+    This function takes in an optional n x 1 x m tensor X and returns a
+    sparse n x m matrix corresponding to rotating the lateral slice to a
+    frontal slice. If no tensor is passed in, the algorithm is run on each
+    of frontal slices of the tensor this routine is being called on. Note
+    that this is the inverse function of the squeeze function, i.e.
+                        X = squeeze(twist(X))
+    Input:
+      X - (optional n x 1 x m Tensor)
+        This is a lateral slice to be converted to a matrix. Note that
+        if no tensor is passed in, then the routine is run on each of
+        the frontal slices of the current instance of the Tensor the
+        function is called on.
      Returns:
        Z - (sparse dok matrix or ndarray)
-         a matrix corresponding to the lateral slice. The type is determined 
-         by whether the input tensor is dense or sparse. 
-  ---------------------------------------------------------------------------'''
-  def twist(self, X = None):
+         a matrix corresponding to the lateral slice. The type is determined
+         by whether the input tensor is dense or sparse.
+    '''
+
     if X is not None:
       if not isinstance(X,Tensor):
         raise TypeError("X is not a member of the Tensor class, X is of type "
@@ -679,28 +686,27 @@ class Tensor:
       self._slices = new_slices
       self._shape = (self.shape[0],self.shape[2],self.shape[1])
 
-  '''---------------------------------------------------------------------------
-     t_product(B)
-         This function takes in another tensor instance and computes the 
-       t-product of the two through the block circulant definition of the 
-       operation. 
-     Input:
-       B - (Tensor Instance)
-         the mode-2 and mode -3 dimensions of the current instance of a tensor 
-         must equal the mode 1 and mode 3 dimensions of B. 
-       transpose - (optional bool)
-         a boolean indicating whether or not to transpose the tensor being 
-         called upon before applying the t-product.
-     Returns: 
-       Tensor Instance
-         Returns a new Tensor which represents the t-product of the current 
-         Tensor and B. 
-     Notes:
-       Develop future support for  
-  ---------------------------------------------------------------------------'''
   def t_product(self,B,transpose = False):
+    '''
+    This function takes in another tensor instance and computes the
+    t-product of the two through the block circulant definition of the
+    operation.
 
-    #TODO: check for tensor object
+    Input:
+      B - (Tensor Instance)
+        the mode-2 and mode -3 dimensions of the current instance of a
+        tensor must equal the mode 1 and mode 3 dimensions of B.
+      transpose - (optional bool)
+        a boolean indicating whether or not to transpose the tensor being
+        called upon before applying the t-product.
+    Returns:
+      Tensor Instance
+      Returns a new Tensor which represents the t-product of the current
+      Tensor and B.
+    Notes:
+      Develop future support for dense case
+    '''
+
     if isinstance(B, Tensor):
       #check dimensions of B
       if transpose:
@@ -735,20 +741,21 @@ class Tensor:
       raise TypeError("B must be a Tensor instance, input is of type {"
                       "}".format(type(B)))
 
-  '''---------------------------------------------------------------------------
-     scale_tensor(scalar, inPlace)
-       This function takes in a scalar value and either returns a Tensor 
-       scaled by a scalar in the field or scales the tensor in question in 
-       place and returns nothing. 
-     Input: 
-       scalar - (subclass of Number)
-         must be a scalar value of a field, will be applied to each of the 
-         tensor slices. 
-       inPlace - (optional bool)
-         a bool indicating whether or not the tensor this function is called 
-         on should be scaled, or whether it should return a new tensor. 
-  ---------------------------------------------------------------------------'''
   def scale_tensor(self,scalar, inPlace = False):
+    '''
+    This function takes in a scalar value and either returns a Tensor
+    scaled by a scalar in the field or scales the tensor in question in
+    place and returns nothing.
+
+    Input:
+      scalar - (subclass of Number)
+        must be a scalar value of a field, will be applied to each of the
+        tensor slices.
+      inPlace - (optional bool)
+        a bool indicating whether or not the tensor this function is called
+        on should be scaled, or whether it should return a new tensor.
+    '''
+
     if not isinstance(scalar, Number):
       raise TypeError("{} is not a subclass of a Number, value passed in is "
                       "of type {}\n".format(scalar,type(scalar)))
@@ -767,27 +774,25 @@ class Tensor:
         else:
           return Tensor(map(lambda x: scalar *x, self._slices))
 
-  '''---------------------------------------------------------------------------
-     frobenius_norm()
-         Returns the Frobenius norm of the tensor. Computed using scipy's norm 
-       function for numerical stability. 
-  ---------------------------------------------------------------------------'''
   def frobenius_norm(self):
+    '''-------------------------------------------------------------------------
+           Returns the Frobenius norm of the tensor. Computed using scipy's norm
+         function for numerical stability.
+    -------------------------------------------------------------------------'''
     if self._slice_format == 'dense':
       return sqrt(reduce(lambda x,y: x + y**2,self._slices.flat,0))
     else:
       return np_norm(map(lambda x: sp_norm(x,ord='fro'),self._slices))
 
-  '''---------------------------------------------------------------------------
-     norm()
-      This function returns the norm (defined with the t product) of the 
-      tensor called upon. Method is computed in a manner rebust to 
-      over/underflow by scaling by the largest element of the tensor. 
+  def norm(self):
+    '''
+    This function returns the norm (defined with the t product) of the
+    tensor called upon. Method is computed in a manner rebust to
+    over/underflow by scaling by the largest element of the tensor.
     Returns:
       norm - (float)
         a float indicating the size of the tensor.
-  ---------------------------------------------------------------------------'''
-  def norm(self):
+    '''
     norm = 0.0
     if all(map(lambda x: x.nnz == 0,self._slices)):
       return norm
@@ -803,22 +808,21 @@ class Tensor:
         norm += sp_norm(slice,ord = 'fro')**2
 
       return sqrt(norm)/self.frobenius_norm()
+  def tubal_angle(self,B):
+    '''
+          This function returns the tubal angle of the current instance of a
+        tensor with another tensor B passed in. This is defined using the inner
+        product defined by the t-product.
+      Returns:
+        cos_distance - (float)
+          the cosine distance between the current tensor and the tensor passed in.
+    '''
+    raise NotImplementedError('finish tubal_angle function')
 
-  '''---------------------------------------------------------------------------
-     tubal_angle(B)
-        This function returns the tubal angle of the current instance of a 
-      tensor with another tensor B passed in. This is defined using the inner 
-      product defined by the t-product. 
-    Returns:
-      cos_distance - (float)
-        the cosine distance between the current tensor and the tensor passed in.
-  ---------------------------------------------------------------------------'''
-
-  '''---------------------------------------------------------------------------
-     find_max()
-       This function returns the largest element of the tensor.
-  ---------------------------------------------------------------------------'''
   def find_max(self):
+    '''-------------------------------------------------------------------------
+         This function returns the largest element of the tensor.
+    -------------------------------------------------------------------------'''
     if self._slice_format == 'dense':
       return self._slices.max()
     else:
@@ -842,25 +846,22 @@ class Tensor:
 
         return reduce(reducing_func,self._slices[1:],initial_val)
 
-
-
-  '''---------------------------------------------------------------------------
-     is_equal_to_tensor(other,tol)
-       This function takes in a another object and a tolerance value and 
-       determines whether or not the input tensor is either elementwise equal to
-       or with a tolerance range of another tensor.
-     Input: 
-       other - (unspecified)
-         object to compare the tensor with, may be any time, but will only 
-         return true if the input is a Tensor instance
-       tol - (float)
-         the tolerance to declare whether or not a tensor is elementwise 
-         close enough. uses the absolute value, b - tol < a < b + tol.
-     Returns:
-       (bool)
-         indicates whether or not the two tensors are equal.
-  ---------------------------------------------------------------------------'''
   def is_equal_to_tensor(self,other, tol = None):
+    '''
+         This function takes in a another object and a tolerance value and
+         determines whether or not the input tensor is either elementwise equal to
+         or with a tolerance range of another tensor.
+       Input:
+         other - (unspecified)
+           object to compare the tensor with, may be any time, but will only
+           return true if the input is a Tensor instance
+         tol - (float)
+           the tolerance to declare whether or not a tensor is elementwise
+           close enough. uses the absolute value, b - tol < a < b + tol.
+       Returns:
+         (bool)
+           indicates whether or not the two tensors are equal.
+    '''
     if tol:
       comp = lambda x,y: abs(x - y) < tol
     else:
@@ -926,33 +927,34 @@ class Tensor:
               return False
     return True
 
-  '''---------------------------------------------------------------------------
-     todense(make_new)
-         this function will convert the current tensor instance into a dense 
-       tensor, or if make_new is true, will return a dense tensor instance.  
-  ---------------------------------------------------------------------------'''
   def todense(self):
-    print "to do"
+    '''
+           this function will convert the current tensor instance into a dense
+         tensor, or if make_new is true, will return a dense tensor instance.
+    '''
+    raise NotImplementedError("condense this function with convert format")
+
+
 '''-----------------------------------------------------------------------------
                               NON-CLASS FUNCTIONS
 -----------------------------------------------------------------------------'''
 
-'''-----------------------------------------------------------------------------
-  zeros(shape)
-      This function takes in a tuple indicating the size, and a dtype 
-    string compatible with scipy's data types and returns a Tensor instance 
-    corresponding to shape passed in filled with all zeros.
-  Input:
-    shape - (list or tuple of ints)
-      a list or tuple with the dimensions of each of the 3 modes. must be of 
-      length 3. 
-    format - (string)
-      the format of the sparse matrices to produce, default is COO. 
-  Returns:
-    Zero_Tensor - (Tensor Instance)
-      an instance of a Tensor of the appropriate dimensions with all zeros. 
------------------------------------------------------------------------------'''
 def zeros(shape, dtype = None,format = 'coo'):
+  '''---------------------------------------------------------------------------
+      This function takes in a tuple indicating the size, and a dtype
+      string compatible with scipy's data types and returns a Tensor instance
+      corresponding to shape passed in filled with all zeros.
+    Input:
+      shape - (list or tuple of ints)
+        a list or tuple with the dimensions of each of the 3 modes. must be of
+        length 3.
+      format - (string)
+        the format of the sparse matrices to produce, default is COO.
+    Returns:
+      Zero_Tensor - (Tensor Instance)
+        an instance of a Tensor of the appropriate dimensions with all zeros.
+  ---------------------------------------------------------------------------'''
+
   if isinstance(shape,list) or isinstance(shape, tuple):
     if len(shape) == 3:
       for i in range(3):
@@ -966,46 +968,46 @@ def zeros(shape, dtype = None,format = 'coo'):
     else:
       raise ValueError("shape must be of length 3.\n")
 
-'''-----------------------------------------------------------------------------
-  random(shape)
-      This function takes in a tuple indicating the size, and a dtype 
-    string compatible with scipy's data types and returns a Tensor instance 
-    corresponding to shape passed of a given density, .
-  Input:
-    shape - (list or tuple of ints)
-      a list or tuple with the dimensions of each of the 3 modes. must be of 
-      length 3. 
-    dtype - (dtype)
-      a datatype consistent with scipy sparse datatype standards
-    format - (string)
-      the format of the sparse matrices to produce, default is COO.
-    random_state - (int)
-      an integer which is passed in as a seed for each of the slices. Each 
-      slice will increment the seed value by 1, so each slice will have a 
-      unique seed. 
-  Returns:
-    random_Tensor - (Tensor Instance)
-      an instance of a Tensor of the appropriate dimensions with all zeros. 
------------------------------------------------------------------------------'''
+def random(shape):
+  '''---------------------------------------------------------------------------
+        This function takes in a tuple indicating the size, and a dtype
+      string compatible with scipy's data types and returns a Tensor instance
+      corresponding to shape passed of a given density, .
+    Input:
+      shape - (list or tuple of ints)
+        a list or tuple with the dimensions of each of the 3 modes. must be of
+        length 3.
+      dtype - (dtype)
+        a datatype consistent with scipy sparse datatype standards
+      format - (string)
+        the format of the sparse matrices to produce, default is COO.
+      random_state - (int)
+        an integer which is passed in as a seed for each of the slices. Each
+        slice will increment the seed value by 1, so each slice will have a
+        unique seed.
+    Returns:
+      random_Tensor - (Tensor Instance)
+        an instance of a Tensor of the appropriate dimensions with all zeros.
+  ---------------------------------------------------------------------------'''
+  raise NotImplementedError("write random function")
 
-'''-----------------------------------------------------------------------------
-   normalize(X)
-       This function takes in a lateral slice and returns a tubal scalar a and 
-     lateral slice V with frobenius norm 1 such that V t_prod a is the 
-     original lateral slice passed in. 
-   Input:
-     X - (Tensor Instance)
-       the lateral slice passed in to be normalized. 
-   Returns:
-     a - (Tensor Instance)
-       the tubal scale. 
-     V - (Tensor Instance)
-       the lateral slice with frobenius norm 1
-   Note:
-     This function should be expanded to take in a full tensor and apply it 
-     to each slice. 
------------------------------------------------------------------------------'''
 def normalize(X):
+  '''---------------------------------------------------------------------------
+         This function takes in a lateral slice and returns a tubal scalar a and
+       lateral slice V with frobenius norm 1 such that V t_prod a is the
+       original lateral slice passed in.
+     Input:
+       X - (Tensor Instance)
+         the lateral slice passed in to be normalized.
+     Returns:
+       a - (Tensor Instance)
+         the tubal scale.
+       V - (Tensor Instance)
+         the lateral slice with frobenius norm 1
+     Note:
+       This function should be expanded to take in a full tensor and apply it
+       to each slice.
+  ---------------------------------------------------------------------------'''
   if not isinstance(X,Tensor):
     raise(TypeError("Input must be a Tensor instance\n, X is of type {"
                     "}".format(type(X))))
@@ -1083,35 +1085,33 @@ def normalize(X):
 
   return V,a
 
-
-'''-----------------------------------------------------------------------------
-   sparse_givens_rotation(A)
-     This function takes in a Tensor instance and a row and column and either 
-     returns a sparse tensor instance corresponding to the tubal givens 
-     rotation corresponding to zeroing out the ith ,jth tubal scalar or it 
-     will apply it to the tensor passed in. 
-   Input:
-     A - (Tensor Instance)
-       the tensor to compute the givens rotation for. 
-     i - (int)
-       the row of the tubal scalar to zero out.
-     j - (int)
-       the column of the tubal scalar to zero out.
-     i_swap - (int)
-       the second row of the tubal scalar to rotate with respect to. 
-     apply - (optional boolean)
-         a bool which indicates whether or not to the apply the givens 
-        rotation to the tensor rather than return a tensor instance 
-        corresponding to the givens rotation. 
-   Returns:
-     Q - (Tensor Instance)
-       if apply is False (default), then Q will be the tensor instance to 
-       which the 
-       
-    Note:
-      handle i_swap tests to ensure that i =/= i_swap
------------------------------------------------------------------------------'''
 def sparse_givens_rotation(A,i,j,i_swap,apply = False):
+  '''---------------------------------------------------------------------------
+       This function takes in a Tensor instance and a row and column and either
+       returns a sparse tensor instance corresponding to the tubal givens
+       rotation corresponding to zeroing out the ith ,jth tubal scalar or it
+       will apply it to the tensor passed in.
+     Input:
+       A - (Tensor Instance)
+         the tensor to compute the givens rotation for.
+       i - (int)
+         the row of the tubal scalar to zero out.
+       j - (int)
+         the column of the tubal scalar to zero out.
+       i_swap - (int)
+         the second row of the tubal scalar to rotate with respect to.
+       apply - (optional boolean)
+           a bool which indicates whether or not to the apply the givens
+          rotation to the tensor rather than return a tensor instance
+          corresponding to the givens rotation.
+     Returns:
+       Q - (Tensor Instance)
+         if apply is False (default), then Q will be the tensor instance to
+         which the
+
+      Note:
+        handle i_swap tests to ensure that i =/= i_swap
+  ---------------------------------------------------------------------------'''
   #check for valid input
   if A._slice_format == 'coo':
     raise ValueError("cannot index into a coo matrix, convert with "
@@ -1179,13 +1179,8 @@ def sparse_givens_rotation(A,i,j,i_swap,apply = False):
     return Tensor(Q_slices)
 
 
-import os
-
 def main():
-  os.chdir('/home/ccolle01/Documents/Tensor.py')
-  A = Tensor('demo')
-  print A.find_max()
+  T.test__set_item__dense_tensor_slice()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()
-

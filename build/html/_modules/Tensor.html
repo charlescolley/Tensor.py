@@ -1,0 +1,1249 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Tensor &#8212; T_Tensor 1.0 documentation</title>
+    <link rel="stylesheet" href="../_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <h1>Source code for Tensor</h1><div class="highlight"><pre>
+<span></span><span class="c1">#  Dependencies</span>
+<span class="c1">#-----------------------------------------------------------------------------</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">scipy.sparse</span> <span class="k">as</span> <span class="nn">sp</span>
+<span class="kn">import</span> <span class="nn">pickle</span>
+<span class="kn">from</span> <span class="nn">itertools</span> <span class="k">import</span> <span class="n">izip</span>
+<span class="kn">from</span> <span class="nn">scipy.sparse.linalg</span> <span class="k">import</span> <span class="n">norm</span> <span class="k">as</span> <span class="n">sp_norm</span>
+<span class="kn">from</span> <span class="nn">scipy.fftpack</span> <span class="k">import</span> <span class="n">fft</span><span class="p">,</span> <span class="n">ifft</span><span class="p">,</span><span class="n">rfft</span><span class="p">,</span> <span class="n">fftshift</span><span class="p">,</span> <span class="n">ifftshift</span><span class="p">,</span> <span class="n">irfft</span>
+<span class="kn">from</span> <span class="nn">math</span> <span class="k">import</span> <span class="n">sqrt</span><span class="p">,</span> <span class="n">hypot</span>
+<span class="kn">from</span> <span class="nn">numpy</span> <span class="k">import</span> <span class="n">ndarray</span><span class="p">,</span> <span class="n">conj</span><span class="p">,</span> <span class="n">NINF</span>
+<span class="kn">from</span> <span class="nn">numpy</span> <span class="k">import</span> <span class="n">zeros</span> <span class="k">as</span> <span class="n">np_zeros</span>
+<span class="kn">from</span> <span class="nn">numpy.linalg</span> <span class="k">import</span> <span class="n">norm</span> <span class="k">as</span> <span class="n">np_norm</span>
+<span class="kn">from</span> <span class="nn">warnings</span> <span class="k">import</span> <span class="n">warn</span>
+<span class="kn">from</span> <span class="nn">numbers</span> <span class="k">import</span> <span class="n">Number</span>
+
+
+
+<span class="sd">&#39;&#39;&#39;-----------------------------------------------------------------------------</span>
+<span class="sd">  Core Class</span>
+<span class="sd">-----------------------------------------------------------------------------&#39;&#39;&#39;</span>
+
+<div class="viewcode-block" id="Tensor"><a class="viewcode-back" href="../index.html#Tensor.Tensor">[docs]</a><span class="k">class</span> <span class="nc">Tensor</span><span class="p">:</span>
+  <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">      This is a class of 3rd order sparse tensors which is designed to support</span>
+<span class="sd">      the t-product.</span>
+
+<span class="sd">      Tensor Class</span>
+<span class="sd">        Private:</span>
+<span class="sd">          _slices - (list of sparse matrices or 3rd order ndarray)</span>
+<span class="sd">           a list of sparse scipy matrices which represents the frontal slices of</span>
+<span class="sd">           the tensor, i.e. the t-th element of the list will be the matrix</span>
+<span class="sd">           A[:,:,t]. All slices will be the same type of sparse matrix. If</span>
+<span class="sd">           slices is passed in as an ndarray, then it must only have 3</span>
+<span class="sd">           dimensions.</span>
+<span class="sd">          _slice_format - (string)</span>
+<span class="sd">           a string indicating the sparse matrix format of each of the frontal</span>
+<span class="sd">           slices in the tensor. If _slices is an ndarray it will be set to</span>
+<span class="sd">           &#39;dense&#39;</span>
+<span class="sd">          shape - (tuple of ints)</span>
+<span class="sd">           a tuple with the shape of the tensor. The ith element of shape</span>
+<span class="sd">           corresponds to the dimension of the ith mode.</span>
+<span class="sd">        Public Methods:</span>
+<span class="sd">          save</span>
+<span class="sd">          load</span>
+<span class="sd">          convert_slices</span>
+<span class="sd">          set_frontal_slice</span>
+<span class="sd">          get_front_slice</span>
+<span class="sd">          set_scalar</span>
+<span class="sd">          get_scalar</span>
+<span class="sd">          resize                SPARSE UNFINISHED</span>
+<span class="sd">          transpose              DENSE UNTESTED</span>
+<span class="sd">          squeeze</span>
+<span class="sd">          twist</span>
+<span class="sd">          t-product                    WRITE DENSE CASE</span>
+<span class="sd">          scale_tensor</span>
+<span class="sd">          find_max</span>
+<span class="sd">          is_equal_to_tensor</span>
+<span class="sd">          frobenius_norm               UNTESTED</span>
+<span class="sd">          norm                         UNTESTED</span>
+<span class="sd">          cos_distance m</span>
+<span class="sd">          to_dense</span>
+<span class="sd">        Overloaded Methods:</span>
+<span class="sd">          __add__</span>
+<span class="sd">          __sub__</span>
+<span class="sd">          __mul__                      UNTESTED</span>
+<span class="sd">          __neg__</span>
+<span class="sd">          __eq__                       UNTESTED</span>
+<span class="sd">          __ne</span>
+<span class="sd">          __getitem__                  DENSE UNTESTED</span>
+<span class="sd">          __setitem__                  UNWRITTEN</span>
+<span class="sd">      Class utilization</span>
+<span class="sd">        zeros</span>
+<span class="sd">        normalize</span>
+
+
+<span class="sd">    TODO: -write a reshape function</span>
+<span class="sd">          -update the convert slices to convert to dense or to sparse</span>
+<span class="sd">          -write random Tensor</span>
+<span class="sd">          -write print overloading</span>
+<span class="sd">          -add in non-zero count private element?</span>
+<span class="sd">  &#39;&#39;&#39;</span>
+
+  <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">slices</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+
+    <span class="k">if</span> <span class="n">slices</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="c1">#if string passed in, assumed to be a file path</span>
+      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">slices</span><span class="p">,</span><span class="nb">str</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">slices</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">slices</span><span class="p">,</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="c1">#check order of tensor</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">slices</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+          <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;ndarray must be of order 3, slices passed in has &quot;</span>
+                           <span class="s2">&quot;order </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">slices</span><span class="o">.</span><span class="n">shape</span><span class="p">)))</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">slices</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="n">slices</span><span class="o">.</span><span class="n">shape</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">=</span> <span class="s2">&quot;dense&quot;</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="c1">#check for valid slice array</span>
+        <span class="n">slice_shape</span> <span class="o">=</span> <span class="n">slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">slice_format</span> <span class="o">=</span> <span class="n">slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">getformat</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">t</span><span class="p">,</span><span class="nb">slice</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">slices</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span><span class="mi">1</span><span class="p">):</span>
+          <span class="k">if</span> <span class="nb">slice</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">slice_shape</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;slices must all have the same shape, slice </span><span class="si">{}</span><span class="s2"> &quot;</span>
+                             <span class="s2">&quot;has shape </span><span class="si">{}</span><span class="s2">, but slice 0 has shape </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span>
+                             <span class="nb">format</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span><span class="n">slice_shape</span><span class="p">))</span>
+          <span class="k">if</span> <span class="nb">slice</span><span class="o">.</span><span class="n">getformat</span><span class="p">()</span> <span class="o">!=</span> <span class="n">slice_format</span><span class="p">:</span>
+            <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;slice format </span><span class="si">{}</span><span class="s2"> is different from first slice, &quot;</span>
+                              <span class="s2">&quot;coverting to format </span><span class="si">{}</span><span class="s2">,</span><span class="se">\n</span><span class="s2"> this may make &quot;</span>
+                              <span class="s2">&quot;initialization slow. pass in list of same type &quot;</span>
+                              <span class="s2">&quot;sparse matrix for </span><span class="se">\n</span><span class="s2">faster &quot;</span>
+                              <span class="s2">&quot;initialization</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span>
+                              <span class="nb">format</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">getformat</span><span class="p">(),</span><span class="n">slice_format</span><span class="p">),</span>
+                          <span class="ne">RuntimeWarning</span><span class="p">)</span>
+            <span class="n">slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="o">.</span><span class="n">asformat</span><span class="p">(</span><span class="n">slice_format</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">slices</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">slice_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">slice_shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="nb">len</span><span class="p">(</span><span class="n">slices</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">=</span> <span class="n">slice_format</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">=</span> <span class="kc">None</span>
+
+  <span class="k">def</span> <span class="nf">__mul__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">t_product</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Number</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_tensor</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> is not a subclass of Number, or a Tensor instance,</span><span class="se">\n</span><span class="s2"> &quot;</span>
+                      <span class="s2">&quot;parameter is of type </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">other</span><span class="p">,</span><span class="nb">type</span><span class="p">(</span><span class="n">other</span><span class="p">)))</span>
+
+  <span class="k">def</span> <span class="nf">_add_sub_helper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">other</span><span class="p">,</span> <span class="n">add</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+      <span class="c1"># check dimensions</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="n">other</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;invalid shape, input tensor must be of shape </span><span class="si">{}</span><span class="s2">, </span><span class="se">\n</span><span class="s2">&quot;</span>
+                         <span class="s2">&quot;input tensor is of shape </span><span class="si">{}</span><span class="s2">.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
+                                                                 <span class="n">other</span><span class="o">.</span><span class="n">shape</span><span class="p">))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">add</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span>
+            <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span><span class="p">,</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">)))</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span>
+            <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span> <span class="n">x</span> <span class="o">-</span> <span class="n">y</span><span class="p">,</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">,</span> <span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">)))</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;input </span><span class="si">{}</span><span class="s2"> passed in is not an instance of a Tensor, &quot;</span>
+                      <span class="s2">&quot;parameter passed in is of type </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span>
+                      <span class="nb">format</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="nb">type</span><span class="p">(</span><span class="n">other</span><span class="p">)))</span>
+
+  <span class="k">def</span> <span class="nf">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_add_sub_helper</span><span class="p">(</span><span class="n">other</span><span class="p">,</span><span class="n">add</span> <span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="k">def</span> <span class="nf">__sub__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">other</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_add_sub_helper</span><span class="p">(</span><span class="n">other</span><span class="p">,</span><span class="n">add</span> <span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">__neg__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale_tensor</span><span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">__eq__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">is_equal_to_tensor</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">__ne__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">other</span><span class="p">):</span>
+    <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="fm">__eq__</span><span class="p">(</span><span class="n">other</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">__getitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">if</span>  <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="nb">slice</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">,</span><span class="nb">int</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">key</span><span class="p">])</span>
+      <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="nb">slice</span><span class="p">):</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[:,</span><span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">]]))</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">]][:,</span><span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">]]])</span>
+      <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">key</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="nb">slice</span><span class="p">):</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">]],</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">key</span><span class="p">[</span><span class="mi">2</span><span class="p">]]))</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">key</span><span class="p">[</span><span class="mi">0</span><span class="p">]][</span><span class="n">key</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="n">key</span><span class="p">[</span><span class="mi">1</span><span class="p">]]])</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;invalid amount of indices/slices, </span><span class="si">{}</span><span class="s2"> found, must add &quot;</span>
+                         <span class="s2">&quot;at most 3 indices and/or slices.&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">key</span><span class="p">))))</span>
+
+  <span class="k">def</span> <span class="nf">__setitem__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<div class="viewcode-block" id="Tensor.save"><a class="viewcode-back" href="../index.html#Tensor.Tensor.save">[docs]</a>  <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">file_name</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in a file name and uses the pickle module to save</span>
+<span class="sd">    the Tensor instance.</span>
+<span class="sd">    Input:</span>
+<span class="sd">      file_name - (string)</span>
+<span class="sd">        The name of the file to save the tensor.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_name</span><span class="p">,</span><span class="s1">&#39;w&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+      <span class="n">pickle</span><span class="o">.</span><span class="n">dump</span><span class="p">([</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">],</span><span class="n">handle</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Tensor.load"><a class="viewcode-back" href="../index.html#Tensor.Tensor.load">[docs]</a>  <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">file_name</span><span class="p">,</span> <span class="n">make_new</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in a file name and loads in into the current tensor</span>
+<span class="sd">    instance, if the make_new flag is true it will return a new instance of a</span>
+<span class="sd">    tensor.</span>
+<span class="sd">    Input:</span>
+<span class="sd">      file_name - (string)</span>
+<span class="sd">        The name of the file to load the tensor from.</span>
+<span class="sd">      make_new - (bool)</span>
+<span class="sd">        Optional bool which indicates whether or not to create a new instance of</span>
+<span class="sd">        a tensor, or just copy it into the current instance.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_name</span><span class="p">,</span><span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">handle</span><span class="p">:</span>
+      <span class="n">private_elements</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">handle</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">make_new</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">private_elements</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">private_elements</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">=</span> <span class="n">private_elements</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="n">private_elements</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="Tensor.convert_slices"><a class="viewcode-back" href="../index.html#Tensor.Tensor.convert_slices">[docs]</a>  <span class="k">def</span> <span class="nf">convert_slices</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="nb">format</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">          This function will convert all of the slices to a desired sparse matrix</span>
+<span class="sd">          format, this derives its functionality from the scipy.sparse._.asformat</span>
+<span class="sd">          function. To convert to a dense tensor, use todense().</span>
+<span class="sd">        Input:</span>
+<span class="sd">          format- (string)</span>
+<span class="sd">            string that specifies the possible formats, valid formats are the</span>
+<span class="sd">            supported formats of scipy sparse matrices. see scipy reference for</span>
+<span class="sd">            most up to date supported formats</span>
+<span class="sd">        References:</span>
+<span class="sd">          https://docs.scipy.org/doc/scipy/reference/sparse.html</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s2">&quot;dense&quot;</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">AttributeError</span><span class="p">(</span><span class="s2">&quot;this function is for sparse tensors</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">t</span><span class="p">,</span> <span class="nb">slice</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="o">.</span><span class="n">asformat</span><span class="p">(</span><span class="nb">format</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">=</span> <span class="nb">format</span></div>
+
+<div class="viewcode-block" id="Tensor.resize"><a class="viewcode-back" href="../index.html#Tensor.Tensor.resize">[docs]</a>  <span class="k">def</span> <span class="nf">resize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">shape</span><span class="p">,</span><span class="n">order</span> <span class="o">=</span> <span class="s1">&#39;C&#39;</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in a 3 tuple and resizes the tensor according to</span>
+<span class="sd">    the dimension of the values passed into the tuple. The method will</span>
+<span class="sd">    default to row major order (C like) but may be done in col major order</span>
+<span class="sd">    (Fortran like).</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      shape - (tuple or list of postive ints)</span>
+<span class="sd">        a tuple or list with at most length 3 which has the appropriate shapes.</span>
+<span class="sd">      order - (optional character)</span>
+<span class="sd">        a character indicating whether or not to use column or row major</span>
+<span class="sd">        formatting for the reshape.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span><span class="nb">list</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span><span class="nb">tuple</span><span class="p">):</span>
+      <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s1">&#39;shape is not a valid list or tuple, shape is of type {&#39;</span>
+                      <span class="s1">&#39;}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">shape</span><span class="p">)))</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s1">&#39;shape must be at most length 3, shape is of length {&#39;</span>
+                       <span class="s1">&#39;}&#39;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)))</span>
+    <span class="n">prod</span> <span class="o">=</span> <span class="k">lambda</span> <span class="nb">list</span><span class="p">:</span> <span class="n">reduce</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="n">x</span><span class="o">*</span><span class="n">y</span><span class="p">,</span><span class="nb">list</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">prod</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="n">prod</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shape</span><span class="p">):</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cannot reshape Tensor with </span><span class="si">{}</span><span class="s2"> entries into shape </span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span>
+                       <span class="nb">format</span><span class="p">(</span><span class="n">prod</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_shape</span><span class="p">),</span><span class="n">shape</span><span class="p">))</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span><span class="n">order</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_shape</span> <span class="o">=</span> <span class="n">shape</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;resize needs to have the sparse case finished&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Tensor.get_frontal_slice"><a class="viewcode-back" href="../index.html#Tensor.Tensor.get_frontal_slice">[docs]</a>  <span class="k">def</span> <span class="nf">get_frontal_slice</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">t</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    returns the t-th frontal slice. Paired with set_slice().</span>
+<span class="sd">    Input:</span>
+<span class="sd">      t - (int)</span>
+<span class="sd">        index of the slice to return</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      slice - (sparse scipy matrix or ndarray)</span>
+<span class="sd">        the t-th slice</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[:,:,</span><span class="n">t</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span></div>
+
+
+<div class="viewcode-block" id="Tensor.set_frontal_slice"><a class="viewcode-back" href="../index.html#Tensor.Tensor.set_frontal_slice">[docs]</a>  <span class="k">def</span> <span class="nf">set_frontal_slice</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ts</span><span class="p">,</span> <span class="n">frontal_slices</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    replaces the t-th frontal slice. Paired with get_slice().</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      ts - (int or slice)</span>
+<span class="sd">        index or slice object of the slices to replace. t must be in</span>
+<span class="sd">        range of the number of frontal slices. Use a constructor to</span>
+<span class="sd">        create larger Tensors.</span>
+<span class="sd">      frontal_slice - (sparse scipy matrix)</span>
+<span class="sd">        the new t-th slice</span>
+
+<span class="sd">    TODO:</span>
+<span class="sd">      Update to match scipy.sparse and ndarray setting interface.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="c1">#check for valid inputs</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span><span class="nb">int</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span><span class="nb">slice</span><span class="p">):</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_set_frontal_slice_validator</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span><span class="n">frontal_slices</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;ts are not an integer or slice, ts are of type {&quot;</span>
+                      <span class="s2">&quot;}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">ts</span><span class="p">))))</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">ts</span><span class="p">]</span> <span class="o">=</span> <span class="n">frontal_slices</span></div>
+
+
+  <span class="k">def</span> <span class="nf">_set_frontal_slice_validator</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">t</span><span class="p">,</span><span class="n">frontal_slice</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function is a helper function for determining if the inputs are</span>
+<span class="sd">    valid in the set_frontal_slice function. t is either ts, or an element in</span>
+<span class="sd">    the slice object, frontal slice is one of the matrices passed into</span>
+<span class="sd">    set_frontal_slice. This is separated from the formatter as the errors</span>
+<span class="sd">    are raised here.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="nb">int</span><span class="p">):</span>
+
+      <span class="c1"># check for valid index</span>
+      <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;out of bounds, 3rd mode index must be less than </span><span class="si">{}</span><span class="s2"> &quot;</span>
+                         <span class="s2">&quot;or greater than -</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                                                      <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+
+      <span class="c1"># check for correct type</span>
+      <span class="n">n</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+      <span class="n">m</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">sp</span><span class="o">.</span><span class="n">issparse</span><span class="p">(</span><span class="n">frontal_slice</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">frontal_slice</span><span class="p">,</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;slice is not a scipy sparse matrix or ndarray, &quot;</span>
+                        <span class="s2">&quot;slice passed in is of type </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">frontal_slice</span><span class="p">)))</span>
+      <span class="k">if</span> <span class="n">frontal_slice</span><span class="o">.</span><span class="n">shape</span> <span class="o">!=</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;slice shape is invalid, slice must be of &quot;</span>
+                         <span class="s2">&quot;shape (</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                         <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">), slice passed in is of shape </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">n</span><span class="p">,</span> <span class="n">m</span><span class="p">,</span>
+                         <span class="n">frontal_slice</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">_set_frontal_slice_formatter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">frontal_slice</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">            This function is a helper function for set_frontal_slice. It will</span>
+<span class="sd">          convert the slice to the current tensor slice_format. Warnings are</span>
+<span class="sd">          raised if the format is the not the same.</span>
+<span class="sd">        Note:</span>
+<span class="sd">          may be good to only raise an error once so it doesn&#39;t burden the</span>
+<span class="sd">          user&#39;s stderr for large T.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">frontal_slice</span><span class="o">.</span><span class="n">getformat</span><span class="p">()</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span><span class="p">:</span>
+      <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;converting frontal slice to format </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span>
+           <span class="nb">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span><span class="p">),</span> <span class="ne">UserWarning</span><span class="p">)</span>
+
+<div class="viewcode-block" id="Tensor.set_scalar"><a class="viewcode-back" href="../index.html#Tensor.Tensor.set_scalar">[docs]</a>  <span class="k">def</span> <span class="nf">set_scalar</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">k</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">scalar</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function sets i,j,k element of the tensor to be the value</span>
+<span class="sd">    passed as the scalar variable.Note that because COO matrices don&#39;t</span>
+<span class="sd">    support assignment, the tensor must be converted. paired with the</span>
+<span class="sd">    get_scalar function.</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      i - (integer)</span>
+<span class="sd">        The mode 1 index to insert the scalar</span>
+<span class="sd">      j - (integer)</span>
+<span class="sd">        The mode 2 index to insert the scalar</span>
+<span class="sd">      k - (integer)</span>
+<span class="sd">       The mode 3 index to insert the scalar</span>
+<span class="sd">      scalar - (scalar type)</span>
+<span class="sd">        The value to be inserted into the tensor, will be cast to the type</span>
+<span class="sd">        of whatever type of matrix the slices are comprised of.</span>
+<span class="sd">    TODO:</span>
+<span class="sd">     -expand the tensor when the use passes an index out of range of the</span>
+<span class="sd">      current</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scalar</span><span class="p">,</span><span class="n">Number</span><span class="p">):</span>
+      <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;scalar must be a subclass of Number, scalar passed &quot;</span>
+                      <span class="s2">&quot;in is of type</span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">scalar</span><span class="p">)))</span>
+    <span class="c1">#check for bounds</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;i index out of bounds, must be in the domain [-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                       <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">]&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;j index out of bounds, must be in the domain [-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                       <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">]&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;k index out of bounds, must be in the domain [-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                       <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">]&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+
+    <span class="c1">#can&#39;t assign elements to a coo matrix</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+      <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Tensor slices are of type coo, which don&#39;t support index &quot;</span>
+                    <span class="s2">&quot;assignment, Tensor slices are being converted to dok.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="ne">RuntimeWarning</span><span class="p">)</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">convert_slices</span><span class="p">(</span><span class="s1">&#39;dok&#39;</span><span class="p">)</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">k</span><span class="p">][</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">scalar</span></div>
+
+<div class="viewcode-block" id="Tensor.get_scalar"><a class="viewcode-back" href="../index.html#Tensor.Tensor.get_scalar">[docs]</a>  <span class="k">def</span> <span class="nf">get_scalar</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">k</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function gets the i,j,k element of the tensor. paired with the</span>
+<span class="sd">    set_scalar function.</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      i - (integer)</span>
+<span class="sd">        The mode 1 index to insert the scalar</span>
+<span class="sd">      j - (integer)</span>
+<span class="sd">        The mode 2 index to insert the scalar</span>
+<span class="sd">      k - (integer)</span>
+<span class="sd">       The mode 3 index to insert the scalar</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      A[i,j,k] - (scalar number)</span>
+<span class="sd">        returns the value at the i,j element of the kth frontal slice.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="c1">#check bounds of i,j,k</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;i index out of bounds, must be in the domain [-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                       <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">]&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;j index out of bounds, must be in the domain [-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                       <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">]&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">k</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;k index out of bounds, must be in the domain [-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                       <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">]&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+      <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">th slice is COO format, converting to dok to read value, &quot;</span>
+           <span class="s2">&quot;please consider converting slices if multiple reads are needed.&quot;</span>
+           <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">k</span><span class="p">),</span><span class="ne">RuntimeWarning</span><span class="p">)</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">k</span><span class="p">]</span><span class="o">.</span><span class="n">asformat</span><span class="p">(</span><span class="s1">&#39;dok&#39;</span><span class="p">)[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">k</span><span class="p">][</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="Tensor.transpose"><a class="viewcode-back" href="../index.html#Tensor.Tensor.transpose">[docs]</a>  <span class="k">def</span> <span class="nf">transpose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inPlace</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    creates a new instance a tensor class such that the frontal slices</span>
+<span class="sd">    are transposed, and the 2nd through nth slices are flipped. Has the</span>
+<span class="sd">    option of returning a new instance, or in place.</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      InPlace - (optional bool)</span>
+<span class="sd">        A boolean indicating whether or not to alter the current tensor,</span>
+<span class="sd">        or produce a new one.</span>
+<span class="sd">    Return:</span>
+<span class="sd">      Tensor Instance</span>
+<span class="sd">        if InPlace is false, then this function returns a new tensor</span>
+<span class="sd">        instance.</span>
+<span class="sd">    Note:</span>
+<span class="sd">      In the dense case, need to find out when np.reshape will create a</span>
+<span class="sd">      copy of the data under the hood.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="p">(</span><span class="n">N</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">T</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s2">&quot;dense&quot;</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">inPlace</span> <span class="ow">and</span> <span class="n">N</span> <span class="o">==</span> <span class="n">M</span><span class="p">:</span>
+        <span class="c1">#transpose the 0th slice first</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+          <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+            <span class="n">temp_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_val</span>
+
+
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="mi">1</span><span class="p">,(</span><span class="n">T</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">):</span>
+          <span class="c1"># handle off diagonals</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+              <span class="n">temp_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">]</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="o">-</span><span class="n">t</span><span class="o">%</span><span class="n">T</span><span class="p">]</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="o">-</span><span class="n">t</span><span class="o">%</span><span class="n">T</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_val</span>
+
+              <span class="n">temp_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span> <span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="o">-</span><span class="n">t</span> <span class="o">%</span> <span class="n">T</span><span class="p">]</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="o">-</span><span class="n">t</span> <span class="o">%</span> <span class="n">T</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_val</span>
+
+          <span class="c1">#handle diagonals</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+            <span class="n">temp_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">T</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="o">-</span><span class="n">t</span><span class="o">%</span><span class="n">T</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="o">-</span><span class="n">t</span><span class="o">%</span><span class="n">T</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_val</span>
+
+        <span class="c1">#handle middle slice if one exists</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">T</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">%</span> <span class="mi">2</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">i</span><span class="p">):</span>
+              <span class="n">temp_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,(</span><span class="n">T</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> \
+                <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,(</span><span class="n">T</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span>
+              <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,(</span><span class="n">T</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">temp_val</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">new_slices</span> <span class="o">=</span> <span class="n">ndarray</span><span class="p">((</span><span class="n">M</span><span class="p">,</span><span class="n">N</span><span class="p">,</span><span class="n">T</span><span class="p">))</span>
+        <span class="c1">#handle the off diagonals</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">N</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">M</span><span class="p">):</span>
+              <span class="n">new_slices</span><span class="p">[</span><span class="n">j</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="o">-</span> <span class="n">t</span> <span class="o">%</span><span class="n">T</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">inPlace</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">new_slices</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">M</span><span class="p">,</span><span class="n">N</span><span class="p">,</span><span class="n">T</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">new_slices</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">inPlace</span><span class="p">:</span>
+        <span class="n">first_slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">T</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[:</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">first_slice</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">new_slices</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">T</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[:</span><span class="mi">0</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+        <span class="n">new_slices</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">T</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">new_slices</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Tensor.squeeze"><a class="viewcode-back" href="../index.html#Tensor.Tensor.squeeze">[docs]</a>  <span class="k">def</span> <span class="nf">squeeze</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in either an n x m matrix and will return a</span>
+<span class="sd">    (n x 1 x m) Tensor. This corresponds to thinking of the matrix as a</span>
+<span class="sd">    frontal slice, and having the function return it as a lateral slice.</span>
+<span class="sd">    Note that if no matrix is passed in, then this function will apply the</span>
+<span class="sd">    squeeze function to each one of the frontal slices of the current</span>
+<span class="sd">    instance of the tensor. Note that this function is paired with the</span>
+<span class="sd">    twist function as an inverse i.e.</span>
+<span class="sd">                        X = twist(squeeze(X))</span>
+<span class="sd">    It should be noted that X will be a dok sparse matrix after the</span>
+<span class="sd">    function calls.</span>
+<span class="sd">    Input:</span>
+<span class="sd">      X - (optional n x m sparse matrix or ndarray)</span>
+<span class="sd">        A sparse matrix or ndarrayto be squeezed. Note if none is passed in,</span>
+<span class="sd">           then each frontal slice in self._slices will be squeezed and the</span>
+<span class="sd">           instance of the Tensor calling this function will be altered.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      Z - (n x 1 x m Tensor)</span>
+<span class="sd">        A tensor corresponding to a single lateral slice. Doesn&#39;t return</span>
+<span class="sd">        anything if no X is passed in.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">sp</span><span class="o">.</span><span class="n">issparse</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>
+        <span class="n">n</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+          <span class="n">X</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">asformat</span><span class="p">(</span><span class="s1">&#39;dok&#39;</span><span class="p">)</span>
+        <span class="n">slices</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
+          <span class="n">slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">X</span><span class="p">[:,</span><span class="n">i</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">slices</span><span class="p">)</span>
+      <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">X</span><span class="p">,</span><span class="n">ndarray</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+          <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;X passed in is not an order 2 ndarray, create an &quot;</span>
+                           <span class="s2">&quot;instance of a tensor and call this method on that &quot;</span>
+                           <span class="s2">&quot;class instance for a 3rd order ndarray.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="n">m</span><span class="p">)</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">reshape</span><span class="p">((</span><span class="n">n</span><span class="p">,</span><span class="mi">1</span><span class="p">,</span><span class="n">m</span><span class="p">)))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;X passed in not a sparse matrix, X is of type {&quot;</span>
+                        <span class="s2">&quot;}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">X</span><span class="p">)))</span>
+    <span class="k">else</span><span class="p">:</span>
+
+      <span class="c1">#check format</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+        <span class="p">(</span><span class="n">N</span><span class="p">,</span><span class="n">M</span><span class="p">,</span><span class="n">T</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">new_slices</span> <span class="o">=</span> <span class="n">ndarray</span><span class="p">((</span><span class="n">N</span><span class="p">,</span><span class="n">T</span><span class="p">,</span><span class="n">M</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+          <span class="n">new_slices</span><span class="p">[:,</span><span class="n">t</span><span class="p">,:]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[:,:,</span><span class="n">t</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">new_slices</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">N</span><span class="p">,</span><span class="n">T</span><span class="p">,</span><span class="n">M</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+          <span class="n">warn</span><span class="p">(</span><span class="s2">&quot;internally converting from coo to dok format, &quot;</span> \
+                              <span class="s2">&quot;may degrade performance</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span><span class="ne">RuntimeWarning</span><span class="p">)</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">convert_slices</span><span class="p">(</span><span class="s1">&#39;dok&#39;</span><span class="p">)</span>
+
+        <span class="c1">#build new slices</span>
+        <span class="n">new_slices</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="n">m</span><span class="p">,</span><span class="n">T</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">m</span><span class="p">):</span>
+          <span class="n">new_slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="n">T</span><span class="p">,</span><span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="nb">format</span><span class="o">=</span><span class="s1">&#39;dok&#39;</span><span class="p">))</span>
+
+        <span class="c1">#populate them</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="nb">slice</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">):</span>
+          <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+            <span class="k">for</span> <span class="p">((</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">),</span><span class="n">val</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">slice</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+              <span class="n">new_slices</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
+          <span class="k">else</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">!=</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+              <span class="nb">slice</span> <span class="o">=</span> <span class="nb">slice</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
+            <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">val</span><span class="p">)</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">row</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">col</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">data</span><span class="p">):</span>
+              <span class="n">new_slices</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">val</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">new_slices</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">=</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="n">T</span><span class="p">,</span><span class="n">m</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">=</span> <span class="s1">&#39;dok&#39;</span></div>
+
+<div class="viewcode-block" id="Tensor.twist"><a class="viewcode-back" href="../index.html#Tensor.Tensor.twist">[docs]</a>  <span class="k">def</span> <span class="nf">twist</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">X</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in an optional n x 1 x m tensor X and returns a</span>
+<span class="sd">    sparse n x m matrix corresponding to rotating the lateral slice to a</span>
+<span class="sd">    frontal slice. If no tensor is passed in, the algorithm is run on each</span>
+<span class="sd">    of frontal slices of the tensor this routine is being called on. Note</span>
+<span class="sd">    that this is the inverse function of the squeeze function, i.e.</span>
+<span class="sd">                        X = squeeze(twist(X))</span>
+<span class="sd">    Input:</span>
+<span class="sd">      X - (optional n x 1 x m Tensor)</span>
+<span class="sd">        This is a lateral slice to be converted to a matrix. Note that</span>
+<span class="sd">        if no tensor is passed in, then the routine is run on each of</span>
+<span class="sd">        the frontal slices of the current instance of the Tensor the</span>
+<span class="sd">        function is called on.</span>
+<span class="sd">     Returns:</span>
+<span class="sd">       Z - (sparse dok matrix or ndarray)</span>
+<span class="sd">         a matrix corresponding to the lateral slice. The type is determined</span>
+<span class="sd">         by whether the input tensor is dense or sparse.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="n">X</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">X</span><span class="p">,</span><span class="n">Tensor</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;X is not a member of the Tensor class, X is of type &quot;</span>
+                        <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">X</span><span class="p">)))</span>
+      <span class="k">elif</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;X is not a lateral slice as the mode-2 dimension is </span><span class="si">{}</span><span class="s2">&quot;</span>
+                         <span class="s2">&quot; not 1,</span><span class="se">\n</span><span class="s2"> if you wish to twist this tensor, &quot;</span>
+                         <span class="s2">&quot;call twist() on that instance&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+          <span class="n">Z</span> <span class="o">=</span> <span class="n">ndarray</span><span class="p">((</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+              <span class="n">Z</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">j</span><span class="p">]</span>
+          <span class="k">return</span> <span class="n">Z</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">Z</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="nb">format</span><span class="o">=</span><span class="s1">&#39;dok&#39;</span><span class="p">,</span><span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+          <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">X</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+
+            <span class="nb">slice</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+              <span class="k">for</span> <span class="p">((</span><span class="n">i</span><span class="p">,</span><span class="n">_</span><span class="p">),</span><span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">slice</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+                <span class="n">Z</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+            <span class="k">else</span><span class="p">:</span>
+              <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">!=</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+                <span class="nb">slice</span> <span class="o">=</span> <span class="nb">slice</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
+              <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="n">_</span><span class="p">,</span><span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">row</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">col</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">data</span><span class="p">):</span>
+                <span class="n">Z</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+          <span class="k">return</span> <span class="n">Z</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+        <span class="n">new_slices</span> <span class="o">=</span> <span class="n">ndarray</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+          <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+            <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+              <span class="n">new_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">,</span><span class="n">j</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">new_slices</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+          <span class="n">new_slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span>
+                                      <span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">&#39;dok&#39;</span><span class="p">))</span>
+
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+          <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+            <span class="k">for</span> <span class="p">((</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+              <span class="n">new_slices</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+          <span class="k">else</span><span class="p">:</span>
+            <span class="nb">slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">!=</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+              <span class="nb">slice</span> <span class="o">=</span> <span class="nb">slice</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
+            <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">row</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">col</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">data</span><span class="p">):</span>
+              <span class="n">new_slices</span><span class="p">[</span><span class="n">j</span><span class="p">][</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+
+        <span class="c1">#convert slices back to original format</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">!=</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+          <span class="n">new_slices</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span><span class="n">x</span><span class="o">.</span><span class="n">asformat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span><span class="p">),</span><span class="n">new_slices</span><span class="p">)</span>
+
+      <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="n">new_slices</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">_shape</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span></div>
+
+<div class="viewcode-block" id="Tensor.t_product"><a class="viewcode-back" href="../index.html#Tensor.Tensor.t_product">[docs]</a>  <span class="k">def</span> <span class="nf">t_product</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">B</span><span class="p">,</span><span class="n">transpose</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in another tensor instance and computes the</span>
+<span class="sd">    t-product of the two through the block circulant definition of the</span>
+<span class="sd">    operation.</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      B - (Tensor Instance)</span>
+<span class="sd">        the mode-2 and mode -3 dimensions of the current instance of a</span>
+<span class="sd">        tensor must equal the mode 1 and mode 3 dimensions of B.</span>
+<span class="sd">      transpose - (optional bool)</span>
+<span class="sd">        a boolean indicating whether or not to transpose the tensor being</span>
+<span class="sd">        called upon before applying the t-product.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      Tensor Instance</span>
+<span class="sd">      Returns a new Tensor which represents the t-product of the current</span>
+<span class="sd">      Tensor and B.</span>
+<span class="sd">    Notes:</span>
+<span class="sd">      Develop future support for dense case</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">B</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+      <span class="c1">#check dimensions of B</span>
+      <span class="k">if</span> <span class="n">transpose</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+          <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;input Tensor B invalid shape </span><span class="si">{}</span><span class="s2">,</span><span class="se">\n</span><span class="s2"> mode 1 &quot;</span>
+                           <span class="s2">&quot;dimension and mode 3 dimension must be equal to </span><span class="si">{}</span><span class="s2"> &quot;</span>
+                           <span class="s2">&quot;and </span><span class="si">{}</span><span class="s2"> respectively&quot;</span>
+                           <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">!=</span> <span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
+          <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;input Tensor B invalid shape </span><span class="si">{}</span><span class="s2">,</span><span class="se">\n</span><span class="s2"> mode 1 &quot;</span>
+                           <span class="s2">&quot;dimension and mode 3 dimension must be equal to </span><span class="si">{}</span><span class="s2"> &quot;</span>
+                           <span class="s2">&quot;and </span><span class="si">{}</span><span class="s2"> respectively&quot;</span>
+                           <span class="s2">&quot;&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+      <span class="n">T</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+      <span class="n">new_slices</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">transpose</span><span class="p">:</span>
+          <span class="n">new_slice</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">new_slice</span> <span class="o">=</span> <span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">B</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+          <span class="k">if</span> <span class="n">transpose</span><span class="p">:</span>
+            <span class="n">new_slice</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[(</span><span class="n">j</span> <span class="o">+</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="n">i</span><span class="p">))</span><span class="o">%</span><span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">T</span> <span class="o">*</span> <span class="n">B</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+          <span class="k">else</span><span class="p">:</span>
+            <span class="n">new_slice</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[(</span><span class="n">i</span> <span class="o">+</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="n">j</span><span class="p">))</span><span class="o">%</span><span class="n">T</span><span class="p">]</span> <span class="o">*</span> <span class="n">B</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+        <span class="n">new_slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">new_slice</span><span class="p">)</span>
+
+      <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">new_slices</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;B must be a Tensor instance, input is of type {&quot;</span>
+                      <span class="s2">&quot;}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">B</span><span class="p">)))</span></div>
+
+<div class="viewcode-block" id="Tensor.scale_tensor"><a class="viewcode-back" href="../index.html#Tensor.Tensor.scale_tensor">[docs]</a>  <span class="k">def</span> <span class="nf">scale_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">scalar</span><span class="p">,</span> <span class="n">inPlace</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function takes in a scalar value and either returns a Tensor</span>
+<span class="sd">    scaled by a scalar in the field or scales the tensor in question in</span>
+<span class="sd">    place and returns nothing.</span>
+
+<span class="sd">    Input:</span>
+<span class="sd">      scalar - (subclass of Number)</span>
+<span class="sd">        must be a scalar value of a field, will be applied to each of the</span>
+<span class="sd">        tensor slices.</span>
+<span class="sd">      inPlace - (optional bool)</span>
+<span class="sd">        a bool indicating whether or not the tensor this function is called</span>
+<span class="sd">        on should be scaled, or whether it should return a new tensor.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scalar</span><span class="p">,</span> <span class="n">Number</span><span class="p">):</span>
+      <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2"> is not a subclass of a Number, value passed in is &quot;</span>
+                      <span class="s2">&quot;of type </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">scalar</span><span class="p">,</span><span class="nb">type</span><span class="p">(</span><span class="n">scalar</span><span class="p">)))</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">inPlace</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+              <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">k</span><span class="p">]</span> <span class="o">*=</span> <span class="n">scalar</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">scalar</span> <span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">)</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span> <span class="o">*</span> <span class="n">scalar</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">scalar</span> <span class="o">*</span><span class="n">x</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="Tensor.frobenius_norm"><a class="viewcode-back" href="../index.html#Tensor.Tensor.frobenius_norm">[docs]</a>  <span class="k">def</span> <span class="nf">frobenius_norm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;-------------------------------------------------------------------------</span>
+<span class="sd">           Returns the Frobenius norm of the tensor. Computed using scipy&#39;s norm</span>
+<span class="sd">         function for numerical stability.</span>
+<span class="sd">    -------------------------------------------------------------------------&#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">reduce</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span><span class="o">**</span><span class="mi">2</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="o">.</span><span class="n">flat</span><span class="p">,</span><span class="mi">0</span><span class="p">))</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">np_norm</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">sp_norm</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="nb">ord</span><span class="o">=</span><span class="s1">&#39;fro&#39;</span><span class="p">),</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">))</span></div>
+
+<div class="viewcode-block" id="Tensor.norm"><a class="viewcode-back" href="../index.html#Tensor.Tensor.norm">[docs]</a>  <span class="k">def</span> <span class="nf">norm</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">    This function returns the norm (defined with the t product) of the</span>
+<span class="sd">    tensor called upon. Method is computed in a manner rebust to</span>
+<span class="sd">    over/underflow by scaling by the largest element of the tensor.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      norm - (float)</span>
+<span class="sd">        a float indicating the size of the tensor.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="n">norm</span> <span class="o">=</span> <span class="mf">0.0</span>
+    <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">nnz</span> <span class="o">==</span> <span class="mi">0</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">)):</span>
+      <span class="k">return</span> <span class="n">norm</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">T</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+
+      <span class="c1">#compute frobenius norm of \langle X, X \rangle slice wise</span>
+      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+        <span class="nb">slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[(</span><span class="n">T</span> <span class="o">-</span> <span class="n">i</span><span class="p">)</span> <span class="o">%</span> <span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">T</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">T</span><span class="p">):</span>
+          <span class="nb">slice</span> <span class="o">+=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[(</span><span class="n">t</span> <span class="o">+</span> <span class="p">(</span><span class="n">T</span> <span class="o">-</span> <span class="n">i</span><span class="p">))</span> <span class="o">%</span> <span class="n">T</span><span class="p">]</span><span class="o">.</span><span class="n">T</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+
+        <span class="n">norm</span> <span class="o">+=</span> <span class="n">sp_norm</span><span class="p">(</span><span class="nb">slice</span><span class="p">,</span><span class="nb">ord</span> <span class="o">=</span> <span class="s1">&#39;fro&#39;</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span>
+
+      <span class="k">return</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">norm</span><span class="p">)</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">frobenius_norm</span><span class="p">()</span></div>
+<div class="viewcode-block" id="Tensor.tubal_angle"><a class="viewcode-back" href="../index.html#Tensor.Tensor.tubal_angle">[docs]</a>  <span class="k">def</span> <span class="nf">tubal_angle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">B</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">          This function returns the tubal angle of the current instance of a</span>
+<span class="sd">        tensor with another tensor B passed in. This is defined using the inner</span>
+<span class="sd">        product defined by the t-product.</span>
+<span class="sd">      Returns:</span>
+<span class="sd">        cos_distance - (float)</span>
+<span class="sd">          the cosine distance between the current tensor and the tensor passed in.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;finish tubal_angle function&#39;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Tensor.find_max"><a class="viewcode-back" href="../index.html#Tensor.Tensor.find_max">[docs]</a>  <span class="k">def</span> <span class="nf">find_max</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;-------------------------------------------------------------------------</span>
+<span class="sd">         This function returns the largest element of the tensor.</span>
+<span class="sd">    -------------------------------------------------------------------------&#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+      <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+        <span class="nb">max</span> <span class="o">=</span> <span class="n">NINF</span>
+        <span class="p">(</span><span class="n">N</span><span class="p">,</span><span class="n">M</span><span class="p">,</span><span class="n">T</span><span class="p">)</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+          <span class="k">for</span> <span class="n">val</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">itervalues</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">val</span> <span class="o">&gt;</span> <span class="nb">max</span><span class="p">:</span>
+              <span class="nb">max</span> <span class="o">=</span> <span class="n">val</span>
+
+        <span class="k">return</span> <span class="nb">max</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="ow">in</span> <span class="p">[</span><span class="s1">&#39;dia&#39;</span><span class="p">,</span><span class="s1">&#39;lil&#39;</span><span class="p">]:</span>
+          <span class="n">reducing_func</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="nb">max</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+          <span class="n">initial_val</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">tocoo</span><span class="p">())</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">reducing_func</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="nb">max</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="o">.</span><span class="n">max</span><span class="p">())</span>
+          <span class="n">initial_val</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+
+
+        <span class="k">return</span> <span class="n">reduce</span><span class="p">(</span><span class="n">reducing_func</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span><span class="n">initial_val</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="Tensor.is_equal_to_tensor"><a class="viewcode-back" href="../index.html#Tensor.Tensor.is_equal_to_tensor">[docs]</a>  <span class="k">def</span> <span class="nf">is_equal_to_tensor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">other</span><span class="p">,</span> <span class="n">tol</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">         This function takes in a another object and a tolerance value and</span>
+<span class="sd">         determines whether or not the input tensor is either elementwise equal to</span>
+<span class="sd">         or with a tolerance range of another tensor.</span>
+<span class="sd">       Input:</span>
+<span class="sd">         other - (unspecified)</span>
+<span class="sd">           object to compare the tensor with, may be any time, but will only</span>
+<span class="sd">           return true if the input is a Tensor instance</span>
+<span class="sd">         tol - (float)</span>
+<span class="sd">           the tolerance to declare whether or not a tensor is elementwise</span>
+<span class="sd">           close enough. uses the absolute value, b - tol &lt; a &lt; b + tol.</span>
+<span class="sd">       Returns:</span>
+<span class="sd">         (bool)</span>
+<span class="sd">           indicates whether or not the two tensors are equal.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">tol</span><span class="p">:</span>
+      <span class="n">comp</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="nb">abs</span><span class="p">(</span><span class="n">x</span> <span class="o">-</span> <span class="n">y</span><span class="p">)</span> <span class="o">&lt;</span> <span class="n">tol</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">comp</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">:</span> <span class="n">x</span> <span class="o">==</span> <span class="n">y</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">other</span><span class="p">,</span> <span class="n">Tensor</span><span class="p">):</span>
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">shape</span> <span class="o">==</span> <span class="n">other</span><span class="o">.</span><span class="n">shape</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_equal_helper</span><span class="p">(</span><span class="n">other</span><span class="p">,</span><span class="n">comp</span><span class="p">):</span>
+          <span class="k">return</span> <span class="n">other</span><span class="o">.</span><span class="n">_is_equal_helper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">comp</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">return</span> <span class="kc">False</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="kc">False</span></div>
+
+  <span class="k">def</span> <span class="nf">_is_equal_helper</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">other</span><span class="p">,</span><span class="n">comp</span><span class="p">):</span>
+
+    <span class="k">if</span> <span class="n">other</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+          <span class="k">for</span> <span class="p">((</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">),</span><span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">comp</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">],</span><span class="n">v</span><span class="p">):</span>
+              <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+              <span class="k">if</span> <span class="ow">not</span> <span class="n">comp</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">],</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">]):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+            <span class="nb">slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+          <span class="k">else</span><span class="p">:</span>  <span class="c1"># other matrix forms are faster to convert to coo to check</span>
+            <span class="nb">slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
+          <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">row</span><span class="p">,</span> <span class="nb">slice</span><span class="o">.</span><span class="n">col</span><span class="p">,</span> <span class="nb">slice</span><span class="o">.</span><span class="n">data</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">comp</span><span class="p">(</span><span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">],</span> <span class="n">v</span><span class="p">):</span>
+              <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+        <span class="c1"># if other is of type coo, change to something one can index into</span>
+        <span class="k">if</span> <span class="n">other</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+          <span class="n">other_slice</span> <span class="o">=</span> <span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">todok</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="n">other_slice</span> <span class="o">=</span> <span class="n">other</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+
+        <span class="c1"># iterate over dok differently than others</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+          <span class="k">for</span> <span class="p">((</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">),</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">comp</span><span class="p">(</span><span class="n">other_slice</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">],</span> <span class="n">v</span><span class="p">):</span>
+              <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+          <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]):</span>
+            <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]):</span>
+              <span class="k">if</span> <span class="ow">not</span> <span class="n">comp</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">t</span><span class="p">],</span><span class="n">other_slice</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">]):</span>
+                <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">else</span><span class="p">:</span>
+          <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+            <span class="nb">slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+          <span class="k">else</span><span class="p">:</span>  <span class="c1"># other matrix forms are faster to convert to coo to check</span>
+            <span class="nb">slice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
+          <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">row</span><span class="p">,</span> <span class="nb">slice</span><span class="o">.</span><span class="n">col</span><span class="p">,</span> <span class="nb">slice</span><span class="o">.</span><span class="n">data</span><span class="p">):</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">comp</span><span class="p">(</span><span class="n">other_slice</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">],</span> <span class="n">v</span><span class="p">):</span>
+              <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+<div class="viewcode-block" id="Tensor.todense"><a class="viewcode-back" href="../index.html#Tensor.Tensor.todense">[docs]</a>  <span class="k">def</span> <span class="nf">todense</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="sd">&#39;&#39;&#39;</span>
+<span class="sd">           this function will convert the current tensor instance into a dense</span>
+<span class="sd">         tensor, or if make_new is true, will return a dense tensor instance.</span>
+<span class="sd">    &#39;&#39;&#39;</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;condense this function with convert format&quot;</span><span class="p">)</span></div></div>
+
+
+<span class="sd">&#39;&#39;&#39;-----------------------------------------------------------------------------</span>
+<span class="sd">                              NON-CLASS FUNCTIONS</span>
+<span class="sd">-----------------------------------------------------------------------------&#39;&#39;&#39;</span>
+
+<div class="viewcode-block" id="zeros"><a class="viewcode-back" href="../index.html#Tensor.zeros">[docs]</a><span class="k">def</span> <span class="nf">zeros</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span><span class="nb">format</span> <span class="o">=</span> <span class="s1">&#39;coo&#39;</span><span class="p">):</span>
+  <span class="sd">&#39;&#39;&#39;---------------------------------------------------------------------------</span>
+<span class="sd">      This function takes in a tuple indicating the size, and a dtype</span>
+<span class="sd">      string compatible with scipy&#39;s data types and returns a Tensor instance</span>
+<span class="sd">      corresponding to shape passed in filled with all zeros.</span>
+<span class="sd">    Input:</span>
+<span class="sd">      shape - (list or tuple of ints)</span>
+<span class="sd">        a list or tuple with the dimensions of each of the 3 modes. must be of</span>
+<span class="sd">        length 3.</span>
+<span class="sd">      format - (string)</span>
+<span class="sd">        the format of the sparse matrices to produce, default is COO.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      Zero_Tensor - (Tensor Instance)</span>
+<span class="sd">        an instance of a Tensor of the appropriate dimensions with all zeros.</span>
+<span class="sd">  ---------------------------------------------------------------------------&#39;&#39;&#39;</span>
+
+  <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span><span class="nb">list</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+      <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="n">i</span><span class="p">],</span><span class="nb">int</span><span class="p">):</span>
+          <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;mode </span><span class="si">{}</span><span class="s2"> dimension must be an integer,</span><span class="se">\n</span><span class="s2"> dimension &quot;</span>
+                           <span class="s2">&quot;passed in is of type </span><span class="si">{}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="nb">type</span><span class="p">(</span><span class="n">i</span><span class="p">)))</span>
+      <span class="n">slices</span> <span class="o">=</span> <span class="p">[]</span>
+      <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+        <span class="n">slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="nb">format</span><span class="o">=</span><span class="nb">format</span><span class="p">))</span>
+      <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">slices</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;shape must be of length 3.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="random"><a class="viewcode-back" href="../index.html#Tensor.random">[docs]</a><span class="k">def</span> <span class="nf">random</span><span class="p">(</span><span class="n">shape</span><span class="p">):</span>
+  <span class="sd">&#39;&#39;&#39;---------------------------------------------------------------------------</span>
+<span class="sd">        This function takes in a tuple indicating the size, and a dtype</span>
+<span class="sd">      string compatible with scipy&#39;s data types and returns a Tensor instance</span>
+<span class="sd">      corresponding to shape passed of a given density, .</span>
+<span class="sd">    Input:</span>
+<span class="sd">      shape - (list or tuple of ints)</span>
+<span class="sd">        a list or tuple with the dimensions of each of the 3 modes. must be of</span>
+<span class="sd">        length 3.</span>
+<span class="sd">      dtype - (dtype)</span>
+<span class="sd">        a datatype consistent with scipy sparse datatype standards</span>
+<span class="sd">      format - (string)</span>
+<span class="sd">        the format of the sparse matrices to produce, default is COO.</span>
+<span class="sd">      random_state - (int)</span>
+<span class="sd">        an integer which is passed in as a seed for each of the slices. Each</span>
+<span class="sd">        slice will increment the seed value by 1, so each slice will have a</span>
+<span class="sd">        unique seed.</span>
+<span class="sd">    Returns:</span>
+<span class="sd">      random_Tensor - (Tensor Instance)</span>
+<span class="sd">        an instance of a Tensor of the appropriate dimensions with all zeros.</span>
+<span class="sd">  ---------------------------------------------------------------------------&#39;&#39;&#39;</span>
+  <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;write random function&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="normalize"><a class="viewcode-back" href="../index.html#Tensor.normalize">[docs]</a><span class="k">def</span> <span class="nf">normalize</span><span class="p">(</span><span class="n">X</span><span class="p">):</span>
+  <span class="sd">&#39;&#39;&#39;---------------------------------------------------------------------------</span>
+<span class="sd">         This function takes in a lateral slice and returns a tubal scalar a and</span>
+<span class="sd">       lateral slice V with frobenius norm 1 such that V t_prod a is the</span>
+<span class="sd">       original lateral slice passed in.</span>
+<span class="sd">     Input:</span>
+<span class="sd">       X - (Tensor Instance)</span>
+<span class="sd">         the lateral slice passed in to be normalized.</span>
+<span class="sd">     Returns:</span>
+<span class="sd">       a - (Tensor Instance)</span>
+<span class="sd">         the tubal scale.</span>
+<span class="sd">       V - (Tensor Instance)</span>
+<span class="sd">         the lateral slice with frobenius norm 1</span>
+<span class="sd">     Note:</span>
+<span class="sd">       This function should be expanded to take in a full tensor and apply it</span>
+<span class="sd">       to each slice.</span>
+<span class="sd">  ---------------------------------------------------------------------------&#39;&#39;&#39;</span>
+  <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">X</span><span class="p">,</span><span class="n">Tensor</span><span class="p">):</span>
+    <span class="k">raise</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Input must be a Tensor instance</span><span class="se">\n</span><span class="s2">, X is of type {&quot;</span>
+                    <span class="s2">&quot;}&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="n">X</span><span class="p">))))</span>
+
+  <span class="p">(</span><span class="n">n</span><span class="p">,</span><span class="n">m</span><span class="p">,</span><span class="n">T</span><span class="p">)</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">shape</span>
+  <span class="k">if</span> <span class="n">m</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s1">&#39;multiple lateral slices is not supported yet</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">)</span>
+
+  <span class="c1">#compute the fft of the elements in the lateral slice</span>
+  <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dense&#39;</span><span class="p">:</span>
+    <span class="n">slice_fft</span> <span class="o">=</span> <span class="n">rfft</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">_slices</span><span class="p">[:,</span><span class="mi">0</span><span class="p">,:])</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">slice_fft</span> <span class="o">=</span> <span class="n">np_zeros</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">T</span><span class="p">))</span>
+
+    <span class="c1"># copy the non-zeros in</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+      <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;dok&#39;</span><span class="p">:</span>
+        <span class="k">for</span> <span class="p">((</span><span class="n">i</span><span class="p">,</span><span class="n">_</span><span class="p">),</span><span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">X</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span><span class="o">.</span><span class="n">iteritems</span><span class="p">():</span>
+           <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="nb">slice</span> <span class="o">=</span> <span class="n">X</span><span class="o">.</span><span class="n">_slices</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">X</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">!=</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+          <span class="nb">slice</span> <span class="o">=</span> <span class="nb">slice</span><span class="o">.</span><span class="n">tocoo</span><span class="p">()</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="n">v</span><span class="p">)</span> <span class="ow">in</span> <span class="n">izip</span><span class="p">(</span><span class="nb">slice</span><span class="o">.</span><span class="n">row</span><span class="p">,</span><span class="nb">slice</span><span class="o">.</span><span class="n">data</span><span class="p">):</span>
+          <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+    <span class="n">rfft</span><span class="p">(</span><span class="n">slice_fft</span><span class="p">,</span><span class="n">overwrite_x</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+  <span class="c1">#normalize all the columns</span>
+  <span class="n">tubal_scalar_non_zeros</span> <span class="o">=</span> <span class="p">[]</span>
+
+  <span class="n">tubal_scalar_non_zeros</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np_norm</span><span class="p">(</span><span class="n">slice_fft</span><span class="p">[:,</span><span class="mi">0</span><span class="p">]))</span>
+  <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+    <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span><span class="o">/</span><span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+  <span class="k">if</span> <span class="n">T</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">end_T</span> <span class="o">=</span> <span class="p">(</span><span class="n">T</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span><span class="o">+</span><span class="mi">1</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="n">end_T</span> <span class="o">=</span> <span class="n">T</span><span class="o">/</span><span class="mi">2</span><span class="o">+</span><span class="mi">1</span>
+
+
+  <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">end_T</span><span class="p">):</span>
+
+    <span class="c1">#compute the norm of the complex components</span>
+    <span class="n">tubal_scalar_non_zeros</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">slice_fft</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span> <span class="o">+</span> <span class="n">slice_fft</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">n</span><span class="p">):</span>
+      <span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+=</span> <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span>
+      <span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">+=</span> <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="p">]</span><span class="o">**</span><span class="mi">2</span>
+
+    <span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">sqrt</span><span class="p">(</span><span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
+
+    <span class="c1">#scale entries</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+      <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">/</span><span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+      <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span> <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="mi">2</span><span class="o">*</span><span class="n">t</span><span class="p">]</span><span class="o">/</span><span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+
+  <span class="k">if</span> <span class="n">T</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="n">tubal_scalar_non_zeros</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">np_norm</span><span class="p">(</span><span class="n">slice_fft</span><span class="p">[:,</span> <span class="n">T</span> <span class="o">/</span> <span class="mi">2</span><span class="p">]))</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">xrange</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+      <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">slice_fft</span><span class="p">[</span><span class="n">i</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">/</span> <span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+
+  <span class="n">irfft</span><span class="p">(</span><span class="n">slice_fft</span><span class="p">,</span><span class="n">overwrite_x</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+  <span class="n">tubal_scalar_non_zeros</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
+  <span class="n">tubal_scalar_non_zeros</span> <span class="o">=</span> <span class="n">ifft</span><span class="p">(</span><span class="n">tubal_scalar_non_zeros</span><span class="p">)</span>
+
+  <span class="n">V</span> <span class="o">=</span> <span class="n">Tensor</span><span class="p">([</span><span class="n">sp</span><span class="o">.</span><span class="n">dok_matrix</span><span class="p">(</span><span class="n">slice_fft</span><span class="p">)])</span>
+  <span class="n">V</span><span class="o">.</span><span class="n">squeeze</span><span class="p">()</span>
+
+  <span class="n">slices</span> <span class="o">=</span> <span class="p">[]</span>
+  <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">T</span><span class="p">):</span>
+    <span class="n">slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">dok_matrix</span><span class="p">((</span><span class="mi">1</span><span class="p">,</span><span class="mi">1</span><span class="p">),</span><span class="n">dtype</span><span class="o">=</span><span class="nb">complex</span><span class="p">))</span>
+    <span class="n">slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="n">tubal_scalar_non_zeros</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+
+  <span class="n">a</span> <span class="o">=</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">slices</span><span class="p">)</span>
+
+
+  <span class="k">return</span> <span class="n">V</span><span class="p">,</span><span class="n">a</span></div>
+
+<div class="viewcode-block" id="sparse_givens_rotation"><a class="viewcode-back" href="../index.html#Tensor.sparse_givens_rotation">[docs]</a><span class="k">def</span> <span class="nf">sparse_givens_rotation</span><span class="p">(</span><span class="n">A</span><span class="p">,</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">i_swap</span><span class="p">,</span><span class="n">apply</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+  <span class="sd">&#39;&#39;&#39;---------------------------------------------------------------------------</span>
+<span class="sd">       This function takes in a Tensor instance and a row and column and either</span>
+<span class="sd">       returns a sparse tensor instance corresponding to the tubal givens</span>
+<span class="sd">       rotation corresponding to zeroing out the ith ,jth tubal scalar or it</span>
+<span class="sd">       will apply it to the tensor passed in.</span>
+<span class="sd">     Input:</span>
+<span class="sd">       A - (Tensor Instance)</span>
+<span class="sd">         the tensor to compute the givens rotation for.</span>
+<span class="sd">       i - (int)</span>
+<span class="sd">         the row of the tubal scalar to zero out.</span>
+<span class="sd">       j - (int)</span>
+<span class="sd">         the column of the tubal scalar to zero out.</span>
+<span class="sd">       i_swap - (int)</span>
+<span class="sd">         the second row of the tubal scalar to rotate with respect to.</span>
+<span class="sd">       apply - (optional boolean)</span>
+<span class="sd">           a bool which indicates whether or not to the apply the givens</span>
+<span class="sd">          rotation to the tensor rather than return a tensor instance</span>
+<span class="sd">          corresponding to the givens rotation.</span>
+<span class="sd">     Returns:</span>
+<span class="sd">       Q - (Tensor Instance)</span>
+<span class="sd">         if apply is False (default), then Q will be the tensor instance to</span>
+<span class="sd">         which the</span>
+
+<span class="sd">      Note:</span>
+<span class="sd">        handle i_swap tests to ensure that i =/= i_swap</span>
+<span class="sd">  ---------------------------------------------------------------------------&#39;&#39;&#39;</span>
+  <span class="c1">#check for valid input</span>
+  <span class="k">if</span> <span class="n">A</span><span class="o">.</span><span class="n">_slice_format</span> <span class="o">==</span> <span class="s1">&#39;coo&#39;</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;cannot index into a coo matrix, convert with &quot;</span>
+                     <span class="s2">&quot;convert_slices methods of Tensor class </span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+  <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;i is out of bounds, i must be in (-</span><span class="si">{}</span><span class="s2">,</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+      <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+
+  <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">j</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;j is out of bounds, j must be in (-</span><span class="si">{}</span><span class="s2">,</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span>
+      <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]))</span>
+  <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">i_swap</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+    <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;i_swap is out of bounds, i_swap must be in (-</span><span class="si">{}</span><span class="s2">,&quot;</span>
+                     <span class="s2">&quot;</span><span class="si">{}</span><span class="s2">)&quot;</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]))</span>
+  <span class="c1">#TODO: handle test for checking i \neq i_swap</span>
+
+
+  <span class="c1">#compute fft of the tubal scalars</span>
+  <span class="n">tubal_scalar1</span> <span class="o">=</span> <span class="n">fftshift</span><span class="p">(</span><span class="n">fft</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="n">i</span><span class="p">,</span><span class="n">j</span><span class="p">],</span> <span class="n">A</span><span class="o">.</span><span class="n">_slices</span><span class="p">)))</span>
+  <span class="n">tubal_scalar2</span> <span class="o">=</span> <span class="n">fftshift</span><span class="p">(</span><span class="n">fft</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="p">[</span><span class="n">i_swap</span><span class="p">,</span> <span class="n">j</span><span class="p">],</span> <span class="n">A</span><span class="o">.</span><span class="n">_slices</span><span class="p">)))</span>
+
+
+  <span class="c1">#compute cos(theta) and sin(theta) in fourier domain</span>
+  <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+    <span class="n">a_mod</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">])</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">a_mod</span><span class="o">*</span><span class="n">sqrt</span><span class="p">(</span><span class="mi">1</span> <span class="o">+</span> <span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">tubal_scalar2</span><span class="p">[</span><span class="n">t</span><span class="p">])</span><span class="o">/</span><span class="n">a_mod</span><span class="p">)</span><span class="o">**</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span>  <span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">/</span> <span class="n">r</span>
+    <span class="n">tubal_scalar2</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">=</span>  <span class="n">tubal_scalar2</span><span class="p">[</span><span class="n">t</span><span class="p">]</span> <span class="o">/</span> <span class="n">r</span>
+
+  <span class="n">tubal_scalar2_conj</span> <span class="o">=</span> <span class="nb">map</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">conj</span><span class="p">(</span><span class="n">x</span><span class="p">),</span><span class="n">tubal_scalar2</span><span class="p">)</span>
+
+
+  <span class="nb">print</span> <span class="n">tubal_scalar1</span>
+
+  <span class="c1">#convert back with inverse fft</span>
+  <span class="n">ifft</span><span class="p">(</span><span class="n">tubal_scalar1</span><span class="p">,</span><span class="n">overwrite_x</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="n">tubal_scalar1</span> <span class="o">=</span> <span class="n">ifftshift</span><span class="p">(</span><span class="n">tubal_scalar1</span><span class="p">)</span>
+  <span class="n">ifft</span><span class="p">(</span><span class="n">tubal_scalar2</span><span class="p">,</span><span class="n">overwrite_x</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="n">tubal_scalar2</span> <span class="o">=</span> <span class="n">ifftshift</span><span class="p">(</span><span class="n">tubal_scalar2</span><span class="p">)</span>
+  <span class="n">ifft</span><span class="p">(</span><span class="n">tubal_scalar2_conj</span><span class="p">,</span> <span class="n">overwrite_x</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+  <span class="n">tubal_scalar4</span> <span class="o">=</span> <span class="n">ifftshift</span><span class="p">(</span><span class="n">tubal_scalar2_conj</span><span class="p">)</span>
+  <span class="nb">print</span> <span class="n">tubal_scalar1</span>
+
+
+  <span class="k">if</span> <span class="n">apply</span><span class="p">:</span>
+    <span class="k">pass</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]):</span>
+      <span class="k">if</span> <span class="n">t</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">Q_slices</span> <span class="o">=</span> <span class="p">[</span><span class="n">sp</span><span class="o">.</span><span class="n">identity</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="nb">format</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">_slice_format</span><span class="p">)]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">Q_slices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">sp</span><span class="o">.</span><span class="n">random</span><span class="p">(</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">A</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+                           <span class="n">density</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="nb">format</span><span class="o">=</span><span class="n">A</span><span class="o">.</span><span class="n">_slice_format</span><span class="p">))</span>
+      <span class="k">if</span> <span class="n">i_swap</span> <span class="o">&lt;</span> <span class="n">i</span><span class="p">:</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span>     <span class="o">=</span> <span class="o">-</span><span class="n">tubal_scalar2_conj</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i_swap</span><span class="p">,</span> <span class="n">i_swap</span><span class="p">]</span> <span class="o">=</span>  <span class="n">tubal_scalar2</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i</span><span class="p">,</span> <span class="n">i_swap</span><span class="p">]</span>   <span class="o">=</span>  <span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i_swap</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span>   <span class="o">=</span>  <span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i_swap</span><span class="p">,</span> <span class="n">i_swap</span><span class="p">]</span> <span class="o">=</span>  <span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span>     <span class="o">=</span>  <span class="n">tubal_scalar1</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i_swap</span><span class="p">,</span> <span class="n">i</span><span class="p">]</span>   <span class="o">=</span>  <span class="n">tubal_scalar2</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+        <span class="n">Q_slices</span><span class="p">[</span><span class="n">t</span><span class="p">][</span><span class="n">i</span><span class="p">,</span> <span class="n">i_swap</span><span class="p">]</span>   <span class="o">=</span> <span class="o">-</span><span class="n">tubal_scalar2_conj</span><span class="p">[</span><span class="n">t</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">Tensor</span><span class="p">(</span><span class="n">Q_slices</span><span class="p">)</span></div>
+
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper"><div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2018, Charles Colley.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
