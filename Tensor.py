@@ -14,7 +14,7 @@ from warnings import warn
 from numbers import Number
 
 
-import test_Tensor as T
+#import test_Tensor as T
 
 
 '''-----------------------------------------------------------------------------
@@ -53,7 +53,7 @@ class Tensor:
           transpose              DENSE UNTESTED
           squeeze
           twist
-          t-product                    WRITE DENSE CASE
+          t-product                    DENSE CASE UNTESTED
           scale_tensor
           find_max
           is_equal_to_tensor
@@ -168,7 +168,11 @@ class Tensor:
 
   def __getitem__(self, key):
     if self._slice_format == 'dense':
-      return Tensor(self._slices[key])
+      new_slices = self._slices[key]
+      if isinstance(new_slices,Number) or len(new_slices.shape) == 2:
+        return new_slices
+      else:
+        return Tensor(new_slices)
     else:
       if  isinstance(key,slice) or isinstance(key,int):
         return Tensor(self._slices[key])
@@ -181,18 +185,29 @@ class Tensor:
         if isinstance(key[0],slice):
           return Tensor(map(lambda x: x[key[0],key[1]],self._slices[key[2]]))
         else:
-          return Tensor([self._slices[key[0]][key[2],key[1]]])
+          new_slices = self._slices[key[0]][key[2],key[1]]
+          if isinstance(new_slices,Number):
+            return new_slices
+          else:
+            return Tensor(new_slices)
       else:
         raise(ValueError("invalid amount of indices/slices, {} found, must add "
                          "at most 3 indices and/or slices.".format(len(key))))
 
+  def _check_slices_are_sparse(slices):
+    for slice in slices:
+      if not sp.issparse(slice):
+        return False
+    return True
+
   def __setitem__(self, key, value):
     if self._slice_format == "dense":
-      if isinstance(value,ndarray):
-        print key
-        self._slices = self._slices[key] = value
-      else:
+      if isinstance(value,ndarray) or isinstance(value,Number):
+        self._slices[key] = value
+      elif _check_slices_are_sparse(value):
         pass
+      else:
+        raise TypeError("setting value must be either ")
 
 
   def save(self, file_name):
@@ -704,37 +719,92 @@ class Tensor:
       Returns a new Tensor which represents the t-product of the current
       Tensor and B.
     Notes:
-      Develop future support for dense case
+      Can use a complex multiplication formula which may be a little less
+      numerically stable, but will improve complex matrix matrix
+      multiplication constants.
     '''
+
+    (N,M,T) = self.shape
+    (M2,L,T2) = B.shape
 
     if isinstance(B, Tensor):
       #check dimensions of B
       if transpose:
-        if self.shape[0] != B.shape[0] or self.shape[2] != B.shape[2]:
+        if N != M2 or T != T2:
           raise ValueError("input Tensor B invalid shape {},\n mode 1 "
                            "dimension and mode 3 dimension must be equal to {} "
                            "and {} respectively"
-                           "".format(B.shape, self.shape[0], self.shape[2]))
+                           "".format(B.shape, N, T))
       else:
-        if self.shape[1] != B.shape[0] or self.shape[2] != B.shape[2]:
+        if M != M2 or T != T2:
           raise ValueError("input Tensor B invalid shape {},\n mode 1 "
                            "dimension and mode 3 dimension must be equal to {} "
                            "and {} respectively"
-                           "".format(B.shape,self.shape[1], self.shape[2]))
-      T = self.shape[2]
+                           "".format(B.shape,M, T))
 
-      new_slices = []
-      for i in xrange(T):
-        if transpose:
-          new_slice = sp.random(self.shape[1], B.shape[1], density=0)
+      if self._slice_format == 'dense':
+        if self._slices.dtype.name == 'complex128':
+          new_slices = fft(self._slices)
+          B_slices = fft(B._slices)
+
+          for t in range(T):
+            new_slices[:,:,t] = np.dot(new_slices[:,:,t],B_slices[:,:,t])
+          ifft(new_slices,overwrite_x=True)
         else:
-          new_slice = sp.random(self.shape[0],B.shape[1],density=0)
-        for j in xrange(T):
-          if transpose:
-            new_slice += self._slices[(j + (T - i))%T].T * B._slices[j]
+          new_slices = np.empty((N,L,T),dtype ='complex128')
+          A_slices = rfft(self._slices)
+          B_slices = rfft(B._slices)
+
+          #handle the first slice
+          for i in xrange(N):
+            for j in xrange(L):
+              new_slices[i,j,0] = A_slices[i,0,0]*B_slices[0,j,0]
+              for k in xrange(1,M):
+                new_slices[i,j,0] += A_slices[i,k,0]*B_slices[k,j,0]
+
+          if T % 2 == 0:
+            #handle the last slice
+            for i in xrange(N):
+              for j in xrange(L):
+                new_slices[i, j, -1] = A_slices[i, 0, -1] * B_slices[0, j, -1]
+                for k in xrange(1, M):
+                  new_slices[i, j, -1] +=\
+                    A_slices[i, k, -1] * B_slices[k, j,-1]
+
+            end_T = (T - 1) / 2 + 1
           else:
-            new_slice += self._slices[(i + (T - j))%T] * B._slices[j]
-        new_slices.append(new_slice)
+            end_T = T / 2 + 1
+
+          for t in xrange(1, end_T):
+            for i in xrange(N):
+              for j in xrange(L):
+                real = A_slices[i,0,t]*B_slices[0,j, t] - \
+                       A_slices[i,0,t+1]*B_slices[0,j,t+1]
+                imaginary = A_slices[i,0,t+1]*B_slices[0,j,t] + \
+                            A_slices[i,0,t]*B_slices[0,j,t+1]
+                new_slices[i,j,t] = complex(real,imaginary)
+                new_slices[i,j,t+T/2] = complex(real,-imaginary)
+                for k in xrange(1,M):
+                  real = A_slices[i, k, t] * B_slices[k, j, t] - \
+                         A_slices[i, k, t + 1] * B_slices[k, j, t + 1]
+                  imaginary = A_slices[i, k, t + 1] * B_slices[k, j, t] +\
+                              A_slices[i, k, t] * B_slices[k, j, t + 1]
+                  new_slices[i, j, t] += complex(real,imaginary)
+                  new_slices[i, j, t + T/2] += complex(real,-imaginary)
+
+      else:
+        new_slices = []
+        for i in xrange(T):
+          if transpose:
+            new_slice = sp.random(M, L, density=0)
+          else:
+            new_slice = sp.random(N,L,density=0)
+          for j in xrange(T):
+            if transpose:
+              new_slice += self._slices[(j + (T - i))%T].T * B._slices[j]
+            else:
+              new_slice += self._slices[(i + (T - j))%T] * B._slices[j]
+          new_slices.append(new_slice)
 
       return Tensor(new_slices)
     else:
@@ -859,7 +929,7 @@ class Tensor:
            the tolerance to declare whether or not a tensor is elementwise
            close enough. uses the absolute value, b - tol < a < b + tol.
        Returns:
-         (bool)
+         (bool)Z
            indicates whether or not the two tensors are equal.
     '''
     if tol:
@@ -1040,6 +1110,7 @@ def normalize(X):
 
   tubal_scalar_non_zeros.append(np_norm(slice_fft[:,0]))
   for i in range(n):
+
     slice_fft[i,0] = slice_fft[i,0]/tubal_scalar_non_zeros[0]
 
   if T % 2 == 0:
@@ -1067,9 +1138,11 @@ def normalize(X):
     tubal_scalar_non_zeros.append(np_norm(slice_fft[:, T / 2]))
     for i in xrange(n):
       slice_fft[i, -1] = slice_fft[i, -1] / tubal_scalar_non_zeros[-1]
+      tubal_scalar_non_zeros.extend(tubal_scalar_non_zeros[-2:0:-1])
+  else:
+    tubal_scalar_non_zeros.extend(tubal_scalar_non_zeros[-1:0:-1])
 
   irfft(slice_fft,overwrite_x = True)
-  tubal_scalar_non_zeros.extend(tubal_scalar_non_zeros[1:])
   tubal_scalar_non_zeros = ifft(tubal_scalar_non_zeros)
 
   V = Tensor([sp.dok_matrix(slice_fft)])
@@ -1179,8 +1252,19 @@ def sparse_givens_rotation(A,i,j,i_swap,apply = False):
     return Tensor(Q_slices)
 
 
+import os
+
 def main():
-  T.test__set_item__dense_tensor_slice()
+  os.chdir('/home/ccolle01/Documents/Tensor.py/')
+  A = Tensor('demo')
+  V,a = normalize(A[:,0,:])
+
+  X = V * a
+
+  print X._slices[0].todense()
+  print A[:,0,:]._slices[0].todense()
+
+  print (A[:,0,:] - V * a).frobenius_norm()
 
 if __name__ == '__main__':
   main()
