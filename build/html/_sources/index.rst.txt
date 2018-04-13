@@ -8,7 +8,7 @@ Welcome to T_Tensor's documentation!
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Contents
 
 .. automodule:: Tensor
   :members:	  
