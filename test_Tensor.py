@@ -11,7 +11,7 @@ from random import randint, uniform
 N = 6
 M = 7
 T = 5
-ERROR_TOL = 1e-12
+ERROR_TOL = 1e-15
 
 def set_up_tensor(n,m,k, format='coo',dense = False):
   if dense:
@@ -75,7 +75,7 @@ def test_invalid_slices_constructors():
   with pytest.raises(ValueError,match=r'slices must all have the same shape.*'):
     A = Tensor(slices)
 
-  with pytest.raises(ValueError,match=r'ndarray must be of order 3, slices.*'):
+  with pytest.raises(ValueError):
     Tensor(np.random.rand(1,2,3,4,5))
     Tensor(np.random.rand(1,2))
 
@@ -94,11 +94,50 @@ def test_inconsistent_matrix_type_constructor():
 def test_dense_tensor_constructor():
   A, slices = set_up_tensor(N,M,T,dense=True)
 
+  #test 3rd order tensor
   assert A.shape[0] == N
   assert A.shape[1] == M
   assert A.shape[2] == T
   assert A._slice_format == "dense"
   assert (A._slices == slices).all()
+
+  #test transverse slice
+  A = Tensor(slices[0,:,:],set_lateral=False)
+  assert (A._slices == slices[0,:,:]).all()
+  assert A.shape[0] == 1
+  assert A.shape[1] == M
+  assert A.shape[2] == T
+  assert A._slice_format == "dense"
+
+  #test lateral slice
+  A = Tensor(slices[:, 0, :])
+  assert (A._slices[:,0,:] == slices[:, 0, :]).all()
+  assert A.shape[0] == N
+  assert A.shape[1] == 1
+  assert A.shape[2] == T
+  assert A._slice_format == "dense"
+
+  #test tubal scalars
+  A = Tensor(slices[:, 0, 0])
+  assert (A._slices == slices[:, 0, 0]).all()
+  assert A.shape[0] == 1
+  assert A.shape[1] == 1
+  assert A.shape[2] == N
+  assert A._slice_format == "dense"
+
+  A = Tensor(slices[0, :, 0])
+  assert (A._slices == slices[0, :, 0]).all()
+  assert A.shape[0] == 1
+  assert A.shape[1] == 1
+  assert A.shape[2] == M
+  assert A._slice_format == "dense"
+
+  A = Tensor(slices[0, 0, :])
+  assert (A._slices == slices[0, 0, :]).all()
+  assert A.shape[0] == 1
+  assert A.shape[1] == 1
+  assert A.shape[2] == T
+  assert A._slice_format == "dense"
 
 
 '''-----------------------------------------------------------------------------
@@ -146,24 +185,91 @@ def test_get_frontal_slice_errors_and_warnings():
   with pytest.raises(ValueError):
     A.set_frontal_slice(0,sp.random(N+1,M+1))
 
-  #warn about wrong type
-  with pytest.warns(UserWarning):
-    A.set_frontal_slice(0,sp.random(N,M,format='lil'))
 
-def test_expanding_tensor():
-  k = 4
-  A, slices = set_up_tensor(N, M, T)
+#no longer want the Tensor to expand when an element is placed out of range
 
-  new_slice = sp.random(N,M)
-  A.set_frontal_slice(T+k,new_slice)
+'''-----------------------------------------------------------------------------
+                              __get_item__ tests
+-----------------------------------------------------------------------------'''
+def test__get_item__scalar():
+  A, dense_slices = set_up_tensor(N,M,T,dense=True)
+  B, sparse_slices = set_up_tensor(N, M, T,format='dok')
 
-  assert A.shape == (N,M,T+k)
-  for t in range(T,T+k):
-    if t == T+k -1:
-      assert (A.get_frontal_slice(t) - new_slice).nnz == 0
-    else:
-      assert (A.get_frontal_slice(t)).nnz == 0
+  i = randint(0,N-1)
+  j = randint(0,M-1)
+  k = randint(0,T-1)
 
+  assert A[i,j,k] == dense_slices[i,j,k]
+  assert B[i,j,k] == sparse_slices[k][i,j]
+
+
+def test__get_item__slice():
+  A, dense_slices = set_up_tensor(N,M,T,dense=True)
+  B, sparse_slices = set_up_tensor(N, M, T,format='dok')
+
+  i = randint(0,N-1)
+  j = randint(0,M-1)
+  k = randint(0,T-1)
+
+  assert (A[i: ,j ,k:]._slices[: ,0 ,:] == dense_slices[i:,j,k:]).all()
+  assert (A[i, j:, k:]._slices[0, :, :] == dense_slices[i, j:, k:]).all()
+  assert (A[i:, j:, k] == dense_slices[i:, j:, k]).all()
+
+  assert all(map(lambda (x,y): not any(x != y[i:,j]), \
+            zip(B[i:,j,k:]._slices,sparse_slices[k:])))
+  assert all(map(lambda (x,y): all((x == y[i,j:]).data), \
+            zip(B[i,j:,k:]._slices,sparse_slices[k:])))
+  assert all((B[i:,j:,k] == sparse_slices[k][i:,j:]).data)
+
+def test__get_item__subtensor():
+  A, dense_slices = set_up_tensor(N,M,T,dense=True)
+  B, sparse_slices = set_up_tensor(N, M, T,format='dok')
+
+  i = randint(0,N-1)
+  j = randint(0,M-1)
+  k = randint(0,T-1)
+
+  assert A[i:,j:,k:] == Tensor(dense_slices[i:,j:,k:])
+  assert B[i:,j:,k:] == Tensor(map(lambda x: x[i:,j:],sparse_slices[k:]))
+
+
+'''-----------------------------------------------------------------------------
+                              __set_item__ tests
+-----------------------------------------------------------------------------'''
+def test__set_item__scalar():
+  #dense tensor
+  A, _ = set_up_tensor(N,M,T,dense=True)
+
+  N2 = randint(0,N-1)
+  M2 = randint(0,M-1)
+  T2 = randint(0,T-1)
+
+  val = 10
+  A[N2,M2,T2] = val
+
+  assert A[N2,M2,T2] == val
+
+
+def test__set_item__dense_tensor_slice():
+  #dense tensor dense slice
+  A, _ = set_up_tensor(N, M, T, dense=True)
+
+  N2_start = randint(0, N-1)
+  M2_start = randint(0, M-1)
+  T2_start = randint(0, T-1)
+
+  dense_lateral_slice = np.random.rand(N - N2_start,T - T2_start)
+  dense_frontal_slice = np.random.rand(N - N2_start,M - M2_start)
+  dense_transverse_slice = np.random.rand(M - M2_start,T - T2_start)
+
+  A[N2_start:,M2_start,T2_start:] = dense_lateral_slice
+  A[N2_start:,M2_start:,T2_start] = dense_frontal_slice
+  A[N2_start,M2_start:,T2_start:] = dense_transverse_slice
+
+  assert (A[N2_start:,M2_start,T2_start:]._slices[:,0,:] ==
+          dense_lateral_slice).all()
+  assert (A[N2_start:,M2_start:,T2_start] == dense_frontal_slice).all()
+  assert (A[N2_start,M2_start:,T2_start:] == dense_transverse_slice).all()
 
 '''-----------------------------------------------------------------------------
                               save/load tests
@@ -218,12 +324,8 @@ def test_dense_non_square_frontal_slices_transpose():
   B = A.transpose()
   A.transpose(inPlace=True)
   for t in range(T):
-    if t == 0:
-      assert (A._slices[:,:,t] == slices[:,:,0].T).all()
-      assert (B._slices[:,:,t] == slices[:,:,0].T).all()
-    else:
-      assert (A._slices[:,:,t] == slices[:,:,t-1].T).all()
-      assert (B._slices[:,:,t] == slices[:,:,t - 1].T).all()
+    assert (A._slices[:,:,t] == slices[:,:,-t%T].T).all()
+    assert (B._slices[:,:,t] == slices[:,:,-t%T].T).all()
 
 
 
@@ -303,7 +405,6 @@ def test_set_scalar_errors():
     A.set_scalar(0,0,0,[1,2,3])
     A.set_scalar(0, 0, 0, "apples")
     A.set_scalar(0,0,0,sp.random(3,2))
-
 
 '''-----------------------------------------------------------------------------
                               squeeze tests
@@ -447,7 +548,21 @@ def test_twist_errors():
 
 
 
+'''
+    if transpose:
+      block_circ_matrix = sp.random((M*T,N*T)
+    else:
+      block_circ_matrix = np.empty((N*T,M*T)))
+    
+    for i in xrange(T):
+      for j in xrange(T):
+        if transpose:
+          block_circ_matrix[i * M:(i + 1) * M, j * N:(j + 1) * N] = \
+            (tensor._slices[:,:,(j + (T - i)) % T]).T
+        else:
+          
 
+'''
 
 
 '''-----------------------------------------------------------------------------
@@ -455,25 +570,41 @@ def test_twist_errors():
 -----------------------------------------------------------------------------'''
 def build_block_circulant_matrix(tensor, transpose = False):
   (N,M,T) = tensor.shape
-  if transpose:
-    block_circ_matrix = sp.random(M*T,N*T,density=0,format='dok')
+
+  if tensor._slice_format == 'dense':
+    if transpose:
+      block_circ_matrix = np.empty((M * T, N * T))
+    else:
+      block_circ_matrix = np.empty((N * T, M * T))
   else:
-    block_circ_matrix = sp.random(N*T,M*T,density=0,format='dok')
+    if transpose:
+      block_circ_matrix = sp.random(M*T,N*T,density=0,format='dok')
+    else:
+      block_circ_matrix = sp.random(N*T,M*T,density=0,format='dok')
 
   #populate the matrix
   for i in range(T):
     for j in range(T):
-      if transpose:
-        block_circ_matrix[i * M:(i + 1) * M, j * N:(j + 1) * N] = \
-          (tensor._slices[(j + (T - i)) % T]).T
+      if tensor._slice_format == "dense":
+        if transpose:
+          block_circ_matrix[i * M:(i + 1) * M, j * N:(j + 1) * N] = \
+            (tensor._slices[:,:,(j + (T - i)) % T]).T
+        else:
+          block_circ_matrix[i * N:(i + 1) * N, j * M:(j + 1) * M] = \
+            tensor._slices[:,:,(i + (T - j)) % T]
       else:
-        block_circ_matrix[i*N:(i+1)*N, j*M:(j+1)*M] = \
-          tensor._slices[(i + (T - j))%T]
+        if transpose:
+          block_circ_matrix[i * M:(i + 1) * M, j * N:(j + 1) * N] = \
+            (tensor._slices[(j + (T - i)) % T]).T
+        else:
+          block_circ_matrix[i*N:(i+1)*N, j*M:(j+1)*M] = \
+            tensor._slices[(i + (T - j))%T]
 
   return block_circ_matrix
 
 def test_t_product():
   A, slices = set_up_tensor(N,M,T,'dok')
+  B, slices2 = set_up_tensor(N,M,T,dense=True)
   bcm = build_block_circulant_matrix(A)
   bcm_T = build_block_circulant_matrix(A,transpose=True)
 
@@ -527,10 +658,10 @@ def test_frobenius_norm():
     sparse_slices.append(sp.coo_matrix(dense_slices[:,:,t]))
 
   A = Tensor(sparse_slices)
-  assert abs(A.frobenius_norm() - np_norm(dense_slices.reshape(N*M*T))) \
-         < ERROR_TOL
-  assert abs(B.frobenius_norm() - np_norm(dense_slices.reshape(N * M * T))) \
-         < ERROR_TOL
+  np_fro_norm = np_norm(dense_slices.reshape(N*M*T))
+
+  assert (abs(A.frobenius_norm() - np_fro_norm)/np_fro_norm) < ERROR_TOL
+  assert (abs(B.frobenius_norm() - np_fro_norm)/np_fro_norm) < ERROR_TOL
 
 
 '''-----------------------------------------------------------------------------
@@ -672,6 +803,22 @@ def test_scale_tensor_errors():
   with pytest.raises(TypeError):
     A.scale_tensor([1,2,3])
     A.scale_tensor('apples',inPlace=True)
+
+'''-----------------------------------------------------------------------------
+                              normalize tests
+-----------------------------------------------------------------------------'''
+def test_dense_normalize():
+
+  A, lateral_slice = set_up_tensor(N,M,T,dense=True)
+
+  V,a = Te.normalize(A)
+
+  for j in range(M):
+    assert (V[:,j,:] * a[:,j,:]).is_equal_to_tensor(A[:,j,:],ERROR_TOL)
+
+
+
+
 
 '''-----------------------------------------------------------------------------
                               zero tensor tests
