@@ -7,7 +7,7 @@ from itertools import izip
 from scipy.sparse.linalg import norm as sp_norm
 from scipy.fftpack import fft, ifft,rfft, fftshift, ifftshift, irfft
 from math import sqrt, hypot
-from numpy import ndarray, conj, NINF, empty
+from numpy import ndarray, conj, NINF, empty, array, dot
 from numpy import zeros as np_zeros
 from numpy.linalg import norm as np_norm
 from warnings import warn
@@ -50,7 +50,7 @@ class Tensor:
           set_scalar
           get_scalar
           resize                SPARSE UNFINISHED
-          transpose              DENSE UNTESTED
+          transpose
           squeeze
           twist
           t-product                    DENSE CASE UNTESTED
@@ -68,7 +68,7 @@ class Tensor:
           __neg__
           __eq__                       UNTESTED
           __ne
-          __getitem__                  DENSE UNTESTED
+          __getitem__
           __setitem__                  UNWRITTEN
       Class utilization
         zeros
@@ -82,75 +82,13 @@ class Tensor:
           -add in non-zero count private element?
   '''
 
-
-  def _set_ndarray_as_slices(self, slices,lateral = True, key = None):
-    '''
-      Helper function for setting the slices when an ndarray is passed in. A
-      given shape must be passed in if the ndarray is 2-dimensional to assess
-      whether it's a transverse or lateral slice.
-
-      :Input:
-        slices - (ndarray)
-          the slices of the tensor to set. slices must have order at most 3.
-        lateral - (optional tuple)
-          a bool indicating whether to set a 2d array as a lateral slice or
-          as a transverse slice. Only checked for 2d array case.
-        key - (optional tuple)
-          The indices or slices to index into the tensor and set the elements
-          with length at most 3. If no key is passed in, it's assumed that
-          the slices object must be created, and self.shape will be set.
-    '''
-    if len(slices.shape) == 1: #assumed to be a tubal scalar
-      T = slices.shape[0]
-      if key:
-        if len(key) == 1:
-          raise ValueError("key must be at least length 2 to identify which "
-                           "tubal scalar to set\n")
-        elif len(key) == 2:
-          self._slices[key,:] = slices
-        else:
-          if isinstance(key[0],slice) or isinstance(key[1],slice):
-            raise ValueError("cannot set tubal scalar over 1st or 2nd modes, "
-                             "slices can only be set over 3rd mode.\n")
-          self._slices[key] = slices
-      else:
-        self._slices = ndarray((1,1,T),buffer=slices.flatten())
-        self.shape = (1,1,T)
-        self._slice_format = 'dense'
-    elif len(slices.shape) == 2:
-      (N,T) = slices.shape
-      if key:
-        if len(key) == 1: #assumed to be a frontal slice
-          self._slices[:,:,key] = slices
-        elif len(key) == 2:
-          self._slices[:,key] = slices
-        elif len(key) == 3:
-          self._slices[key] = slices
-        else:
-          raise ValueError("key must be at most length 3, key is length {"
-                           "}\n".format(len(key)))
-      else:
-        if lateral:
-          self._slices = ndarray((N,1,T),buffer=slices.flatten())
-          self.shape = (N,1,T)
-          self._slice_format = 'dense'
-        else:
-          self._slices = ndarray((1,N,T),buffer=slices.flatten())
-          self.shape = (1,N,T)
-          self._slice_format = 'dense'
-    else:
-      if key:
-        self._slices[key] = slices
-      else:
-        self._slices = slices
-        self.shape = slices.shape
-        self._slice_format = 'dense'
-
-
-
   def __init__(self, slices = None, set_lateral = True):
 
     if slices is not None:
+
+      if isinstance(slices,list) and isinstance(slices[0],Number):
+        slices = array(slices)
+
       #if string passed in, assumed to be a file path
       if isinstance(slices,str):
         self.load(slices)
@@ -237,12 +175,10 @@ class Tensor:
       elif isinstance(key,int):
         return self._slices[:,:,key]
       elif len(key) == 2:
-        if isinstance(key[1],int):
-          return self._slices[:,key[0],key[1]]
-        elif isinstance(key[0],int):
-          return Tensor(self._slices[:,key],set_lateral=False)
+        if isinstance(key[0],int):
+          return Tensor(self._slices[key[0],key[1],:],set_lateral=False)
         else:
-          new_slices = self._slices[:,key]
+          new_slices = self._slices[key[0],key[1],:]
       elif len(key) == 3:
         new_slices = self._slices[key]
         if isinstance(new_slices,Number) or isinstance(key[2],int):
@@ -258,26 +194,348 @@ class Tensor:
         return Tensor(self._slices[key])
       elif isinstance(key,int):
         return self._slices[key]
-      elif len(key) == 2:
-        if isinstance(key[1],slice):
-          return Tensor(map(lambda x: x[:,key[0]],self._slices[key[1]]))
-        else:
-          return self._slices[key[1]][:,key[0]]
-      elif len(key) == 3:
-        if isinstance(key[2],slice):
-          return Tensor(map(lambda x: x[key[0],key[1]],self._slices[key[2]]))
-        else:
-          new_slices = self._slices[key[2]][key[0],key[1]]
-          if isinstance(new_slices,Number):
-            return new_slices
-          else:
-            if isinstance(key[2],int):
-              return new_slices
-            else:
-              return Tensor(new_slices)
       else:
-        raise(ValueError("invalid amount of indices/slices, {} found, must add "
-                         "at most 3 indices and/or slices.".format(len(key))))
+        if self._slice_format not in ['coo', 'dia', 'bsr']:
+          if len(key) == 2:
+            return Tensor(map(lambda x: x[key],self._slices))
+          elif len(key) == 3:
+            if isinstance(key[2],slice):
+              return Tensor(map(lambda x: x[key[0],key[1]],self._slices[key[2]]))
+            else:
+              new_slices = self._slices[key[2]][key[0],key[1]]
+              if isinstance(new_slices,Number):
+                return new_slices
+              else:
+                if isinstance(key[2],int):
+                  return new_slices
+                else:
+                  return Tensor(new_slices)
+          else:
+            raise ValueError("invalid amount of indices/slices, {} found, must "
+                             "have at\n most 3 indices and/or slices.".\
+                             format(len(key)))
+        else:
+          raise TypeError('{} format does not support slice assignment,\n use '
+                          'self.convert_slices to reformat the tensor to dok or '
+                          'lil format'.format(self._slice_format))
+
+
+
+  def _set_ndarray_as_slices(self, slices,lateral = True, key = None):
+    '''
+      Helper function for setting the slices when an ndarray is passed in. A
+      given shape must be passed in if the ndarray is 2-dimensional to assess
+      whether it's a transverse or lateral slice.
+
+      :Input:
+        slices - (ndarray)
+          the slices of the tensor to set. slices must have order at most 3.
+        lateral - (optional tuple)
+          a bool indicating whether to set a 2d array as a lateral slice or
+          as a transverse slice. Only checked for 2d array case.
+        key - (optional tuple)
+          The indices or slices to index into the tensor and set the elements
+          with length at most 3. If no key is passed in, it's assumed that
+          the slices object must be created, and self.shape will be set.
+    '''
+    if len(slices.shape) == 1: #assumed to be a tubal scalar
+      T = slices.shape[0]
+      if key:
+        if len(key) == 1:
+          raise ValueError("key must be at least length 2 to identify which "
+                           "tubal scalar to set\n")
+        elif len(key) == 2:
+          if self._slice_format == "dense":
+            self._slices[key[0],key[1],:] = slices
+          else:
+            for t in xrange(T):
+              self._slices[t][key] = slices[t]
+        else:
+          if isinstance(key[0],slice) or isinstance(key[1],slice):
+            raise ValueError("cannot set tubal scalar over 1st or 2nd modes, "
+                             "slices can only be set over 3rd mode.\n")
+          if self._slice_format == 'dense':
+            self._slices[key] = slices
+          else:
+            slice_length = len(self._slices[key[2]])
+            if slice_length != len(slices):
+              raise ValueError('tubal scalar of length {} is incorrect size, '
+                               'must be of length {}'.format(len(slices),
+                                                             slice_length))
+            for t,slice_t in enumerate(self._slices[key[2]]):
+              slice_t[key[:2]] = slices[t]
+      else:
+        self._slices = ndarray((1,1,T),buffer=slices.flatten())
+        self.shape = (1,1,T)
+        self._slice_format = 'dense'
+    elif len(slices.shape) == 2:
+      (N,T) = slices.shape
+      if key:
+        if len(key) == 1: #assumed to be a frontal slice
+          if self._slice_format == 'dense':
+            self._slices[:,:,key] = slices
+          else:
+            self._slices[key] = slices
+        elif len(key) == 2:
+          if self._slice_format == 'dense':
+            self._slices[key[0],key[1],:] = slices
+          else:
+            if isinstance(key[0],int) and isinstance(key[1],slice):
+              for t,t_slice in enumerate(self._slice):
+                self._slices[key[:2]] = slices[t,:]
+            elif isinstance(key[1],int) and isinstance(key[0],slice):
+              for t, t_slice in enumerate(self._slice):
+                self._slices[key[1]] = slices[:,t]
+            else:
+              raise ValueError("cannot assign matrix to a scalar or "
+                               "subtensor.\n")
+        elif len(key) == 3:
+          if self._slice_format == 'dense':
+            self._slices[key] = slices
+          else:
+            (N,M,T) = self.shape
+            if isinstance(key[0],int) and isinstance(key[1],slice) and \
+               isinstance(key[2],slice): #transverse
+              for (i,t) in enumerate(xrange(*key[2].indices(T))):
+                self._slices[t][key[0],key[1]] = slices[:,i]
+            elif isinstance(key[0],slice) and isinstance(key[1],int) and \
+               isinstance(key[2],slice): #lateral
+               for (i,t) in enumerate(xrange(*key[2].indices(T))):
+                 self._slices[t][key[0],key[1]] \
+                   = slices[:,i].reshape(slices[:,i].shape[0],1)
+            elif isinstance(key[0], slice) and isinstance(key[1], slice) and \
+             isinstance(key[2], int):  # frontal
+               self._slices[key[2]][key[0],key[1]] = slices
+            else:
+              raise ValueError("Cannot assign matrix to indices as passed in,"
+                               "\n must have two slices and one integer to "
+                               "assign a matrix.\n")
+        else:
+          raise ValueError("key must be at most length 3, key is length {"
+                           "}\n".format(len(key)))
+      else:
+        if lateral:
+          self._slices = ndarray((N,1,T),buffer=slices.flatten())
+          self.shape = (N,1,T)
+          self._slice_format = 'dense'
+        else:
+          self._slices = ndarray((1,N,T),buffer=slices.flatten())
+          self.shape = (1,N,T)
+          self._slice_format = 'dense'
+    else:
+      if key:
+        self._slices[key] = slices
+      else:
+        self._slices = slices
+        self.shape = slices.shape
+        self._slice_format = 'dense'
+
+
+  def _set_sparse_matrices_as_slices(self,slices,lateral = True, key=None):
+    '''
+      This is a helper function for parsing input and setting the non-zeros
+      of a tensor when the value is either a sparse matrix or list of sparse
+      matrices.
+
+      :Input:
+        slices - (list of (or) sparse matrix)
+          the slices to set in the tensor. tubal scalars must be made with a
+          np.array.
+        lateral - (optional bool)
+          a boolean indicating whether or not to set a matrix slice as a
+          lateral slice, only used for sparse matrix case.
+        key - (optional tuple)
+          a tuple with indices or slices for setting the values of the
+          subtensor. values are assumed to be correct, else the errors will
+          be raised by the scipy classes.
+
+    '''
+
+    #tubal scalars must be set with dense arrays
+    if sp.issparse(slices):
+      if key:
+        (N,M,T) = self.shape
+        if len(key) == 1:
+          if isinstance(key,int):
+            if self._slice_format == 'dense':
+              self._slices[:,:,key] = np_zeros((N,M))
+              def assign(A,i,j,v):
+                A[i,j,key] = v
+            else:
+              self._slices[key] = sp.random(N,M,density=0,
+                                            format=self._slice_format)
+              def assign(A,i,j,v):
+                A[key][i,j] = v
+          else:
+            raise ValueError("cannot assign a matrix to a single slice. Keys "
+                            "of length 1 are assumed to refer to frontal "
+                            "slices.\n")
+        elif len(key) == 2:
+          (start,stop,step) = (0,0,0) #initialize for existance after if statement
+          if isinstance(key[0], int) and isinstance(key[1], slice): #transverse
+
+            (start,stop,step) = key[1].indices(M)            #zero out elements
+
+            if self._slice_format == 'dense':
+              def assign(A, i, j, v):
+                A[key[0],start + i*step,j] = v
+            else:
+              def assign(A, i, j, v):
+                A[j][key[0],start + i*step] = v
+          elif isinstance(key[1], int) and isinstance(key[0],slice):# lateral
+            (start,stop,step) = key[0].indices(N)
+            if self._slice_format == 'dense':
+              def assign(A, i, j, v):
+                A[start + i*step,key[1],j] = v
+            else:
+              def assign(A,i,j,v):
+                A[j][start + i*step,key[1]] = v
+
+          else:
+            raise ValueError("cannot assign matrix to key of type {}. "
+                             "mut be either (slice,int) or (int,slice) "
+                             "to assign lateral or transverse slice "
+                             "respectively.\n".format(map(type, key)))
+          #zero out the elements
+          if self._slice_format == 'dense':
+            self._slices[key[0], key[1], :] = \
+              np_zeros(((stop - start) / step, T))
+          else:
+            for t in xrange(T):
+              if self._slice_format == 'dok':
+                for (i,j) in self._slices[t][key].iterkeys():
+                  assign(self._slices[t],i,j,0)
+              else:
+                slice_t = self._slices[t][key].tocoo()
+                for (i,j) in izip(slice_t.row,slice_t.col):
+                  assign(self._slice[t],i,j,0)
+        elif len(key) == 3:
+          if isinstance(key[0], int) and isinstance(key[1], slice)\
+              and isinstance(key[2],slice):
+            #transverse
+            (start2, stop2, step2) = key[1].indices(M)
+            (start3, stop3, step3) = key[2].indices(T)
+            if self._slice_format == 'dense':
+              def assign(A, i, j, v):
+                A[key[0],start2 + i*step2,start3 +step3*j] = v
+            else:
+              def assign(A, i, j, v):
+                print '\n'
+                print self.shape,len(A), A[0].shape
+                print key
+                print start3, step3, start2, step2, i ,j
+                print start3 +step3*j
+                print start2 + i*step2
+                A[start3 +step3*j][key[0],start2 + i*step2] = v
+
+            mode1_size = 1
+            mode2_size = (stop2 - start2) / step2
+            mode3_size = (stop3 - start3) / step3
+          elif isinstance(key[0], slice) and isinstance(key[1], int)\
+              and isinstance(key[2],slice):
+            #lateral
+            (start1, stop1, step1) = key[0].indices(N)
+            (start3, stop3, step3) = key[2].indices(T)
+            if self._slice_format == 'dense':
+              def assign(A, i, j, v):
+                A[start1 + i*step1,key[1],start3 +step3*j] = v
+            else:
+              def assign(A, i, j, v):
+                A[start3 +step3*j][start1 + i*step1,key[1]] = v
+
+            mode1_size = (stop1 - start1) / step1
+            mode2_size = 1
+            mode3_size = (stop3 - start3) / step3
+          elif isinstance(key[0], slice) and isinstance(key[1], slice)\
+              and isinstance(key[2],int):
+            #frontal
+            (start1, stop1, step1) = key[0].indices(N)
+            (start2, stop2, step2) = key[1].indices(M)
+            if self._slice_format == 'dense':
+              def assign(A, i, j, v):
+                A[start1 + i*step1,start2 +step2*j,key[2]] = v
+            else:
+              def assign(A, i, j, v):
+                A[key[2]][start1 + i*step1,start2 + j*step2] = v
+
+            mode1_size = (stop1 - start1) / step1
+            mode2_size = (stop2 - start2) / step2
+            mode3_size = 1
+          else:
+            raise ValueError("key must contain two slices and 1 index to "
+                             "properly assign a matrix to a subsection of the "
+                             "tensor.\n")
+          if self._slice_format == 'dense':
+            if mode1_size == 1:
+              shape = (mode2_size,mode3_size)
+            elif mode2_size == 1:
+              shape = (mode1_size, mode3_size)
+            elif mode3_size == 1:
+              shape = (mode1_size,mode2_size)
+            else:
+              shape = (mode1_size,mode2_size,mode3_size)
+
+            self._slices[key[0], key[1], key[2]] = np_zeros(shape)
+          elif isinstance(key[2],int):
+            if self._slice_format == 'dok':
+              for (i,j) in self._slices[key[2]][key[0],key[1]].iterkeys():
+                assign(self._slices,i,j,0)
+            else:
+              slice_t = self._slices[key[2]][key[0],key[1]].tocoo()
+              for (i,j) in izip(slice_t,row,slice_t.col):
+                assign(self._slices,i,j,0)
+          else:
+            mode_3_indices = key[2].indices(T)
+            if self._slice_format == 'dok':
+              for t in xrange(*mode_3_indices):
+                if isinstance(key[1],int):
+                  for (i,_) in self._slices[t][key[0],key[1]].iterkeys():
+                    assign(self._slices,i,t,0)
+                else:
+                  for (_,j) in self._slices[t][key[0],key[1]].iterkeys():
+                    assign(self._slices,j,t,0)
+            else:
+              for t in xrange(*mode_3_indices):
+                slice_t = self._slices[t][key[0],key[1]].tocoo()
+                if isinstance(key[1],int):
+                  for i in slice_t.row:
+                    assign(self._slices, i, t, 0)
+                else:
+                  for j in slice_t.col:
+                    assign(self._slices, j, t, 0)
+        else:
+          raise ValueError("indices must have at most 3 indices and/or "
+                           "slices, {} passed in".format(len(key)))
+
+        if slices.format == 'dok':
+          for ((i, j), v) in slices.iteritems():
+            assign(self._slices, i, j, v)
+        else:
+          if slices.format != 'coo':
+            slices = slices.tocoo()
+          for (i, j, v) in izip(slices.row, slices.col, slices.data):
+            assign(self._slices, i, j, v)
+      else:
+        (N,T) = slices.shape
+        new_slices = []
+        if lateral:
+          for t in xrange(N):
+            new_slices.append(slices[:,t])
+            self.shape = (N, 1, T)
+        else:
+          for t in xrange(T):
+            new_slices.append(slices[t,:])
+          self.shape = (1, N, T)
+        self._slices = new_slices
+        self._slice_format = slices.format
+    else:
+      if key:
+        for t,slice_t in enumerate(self._slices[key[2]]):
+          slice_t[key[key[0],key[1]]] = slices[t]
+      else:
+        self._slices = slices
+        (N,M) = slices[0].shape
+        self.shape = (N,M,len(slices))
 
   def _check_slices_are_sparse(slices):
     for slice in slices:
@@ -286,19 +544,32 @@ class Tensor:
     return True
 
   def __setitem__(self, key, value):
-    if self._slice_format == "dense":
-      if isinstance(value,ndarray):
-        if len(value.shape) == 2 and isinstance(key[0],int):
-          self._set_ndarray_as_slices(value,lateral=False,key=key)
-        else:
-          self._set_ndarray_as_slices(value,key=key)
-      elif isinstance(value,Number):
-        self._slices[key] = value
-      elif _check_slices_are_sparse(value):
-        pass
-      else:
-        raise TypeError("setting value must be either ")
+    if self._slice_format in ['coo', 'dia', 'bsr']:
+      raise TypeError('{} format does not support slice assignment, use '
+                      'self.convert_slices to reformat the tensor to dok or '
+                      'lil format\n'.format(self._slice_format))
 
+    #cast to array if list of numbers
+    if isinstance(value,list) and isinstance(value[0],Number):
+      value = array(value)
+
+    if isinstance(value,ndarray):
+      if len(value.shape) == 2 and isinstance(key[0],int):
+        self._set_ndarray_as_slices(value,lateral=False,key=key)
+      else:
+        self._set_ndarray_as_slices(value,key=key)
+    elif isinstance(value,Number):
+      if self._slice_format == 'dense':
+        self._slices[key] = value
+      else:
+        self._slices[key[2]][key[:2]] = value
+    elif sp.issparse(value) or self._check_slices_are_sparse(value):
+      if len(value.shape) == 2 and isinstance(key[0],int):
+        self._set_sparse_matrices_as_slices(value,lateral=False,key=key)
+      else:
+        self._set_sparse_matrices_as_slices(value,key=key)
+    else:
+      raise TypeError("setting value must be either ")
 
   def save(self, file_name):
     '''
@@ -388,172 +659,7 @@ class Tensor:
     else:
       raise NotImplementedError("resize needs to have the sparse case finished")
 
-  def get_frontal_slice(self,t):
-    '''
-    returns the t-th frontal slice. Paired with set_slice().
 
-    Input:
-      t - (int)
-        index of the slice to return
-    Returns:
-      slice - (sparse scipy matrix or ndarray)
-        the t-th slice
-    '''
-    if self._slice_format == 'dense':
-      return self._slices[:,:,t]
-    else:
-      return self._slices[t]
-
-
-  def set_frontal_slice(self, ts, frontal_slices):
-    '''
-      Replaces the t-th frontal slice. Paired with get_slice().
-
-    :Input:
-      ts - (int or slice)
-        index or slice object of the slices to replace. t must be in range of \
-        the number of frontal slices. Use a constructor to create larger \
-        Tensors.
-      frontal_slice - (sparse scipy matrix)
-        the new t-th slice
-
-    TODO:
-      Update to match scipy.sparse and ndarray setting interface.
-    '''
-
-    #check for valid inputs
-    if isinstance(ts,int) or isinstance(ts,slice):
-      self._set_frontal_slice_validator(ts,frontal_slices)
-    else:
-      raise(TypeError("ts are not an integer or slice, ts are of type {"
-                      "}".format(type(ts))))
-
-    self._slices[ts] = frontal_slices
-
-
-  def _set_frontal_slice_validator(self,t,frontal_slice):
-    '''
-      This function is a helper function for determining if the inputs are \
-    valid in the set_frontal_slice function. t is either ts, or an element in \
-    the slice object, frontal slice is one of the matrices passed into \
-    set_frontal_slice. This is separated from the formatter as the errors \
-    are raised here.
-    '''
-    if isinstance(t,int):
-
-      # check for valid index
-      if abs(t) > self.shape[2]:
-        raise ValueError("out of bounds, 3rd mode index must be less than {} "
-                         "or greater than -{}".format(self.shape[2],
-                                                      self.shape[2]))
-
-      # check for correct type
-      n = self.shape[0]
-      m = self.shape[1]
-      if not sp.issparse(frontal_slice) and not isinstance(frontal_slice,ndarray):
-        raise TypeError("slice is not a scipy sparse matrix or ndarray, "
-                        "slice passed in is of type {}\n".format(type(frontal_slice)))
-      if frontal_slice.shape != (n, m):
-        raise ValueError("slice shape is invalid, slice must be of "
-                         "shape ({},"
-                         "{}), slice passed in is of shape {}\n", n, m,
-                         frontal_slice.shape)
-
-  def _set_frontal_slice_formatter(self,frontal_slice):
-    '''
-      This function is a helper function for set_frontal_slice. It will convert\
-    the slice to the current tensor slice_format. Warnings are raised if the \
-    format is the not the same.
-
-    TODO:
-      may be good to only raise an error once so it doesn't burden the \
-      user's stderr for large T.
-    '''
-    if frontal_slice.getformat() != self._slice_format:
-      warn("converting frontal slice to format {}\n".
-           format(self._slice_format), UserWarning)
-
-  def set_scalar(self,k,j,i,scalar):
-    '''
-      This function sets i,j,k element of the tensor to be the value passed \
-    as the scalar variable.Note that because COO matrices don't support \
-    assignment, the tensor must be converted. paired with the get_scalar \
-    function.
-
-    :Input:
-      i - (integer)
-        The mode 1 index to insert the scalar
-      j - (integer)
-        The mode 2 index to insert the scalar
-      k - (integer)
-       The mode 3 index to insert the scalar
-      scalar - (scalar type)
-        The value to be inserted into the tensor, will be cast to the type \
-        of whatever type of matrix the slices are comprised of.
-
-    TODO:
-     -expand the tensor when the use passes an index out of range of the \
-      current
-    '''
-
-    if not isinstance(scalar,Number):
-      raise TypeError("scalar must be a subclass of Number, scalar passed "
-                      "in is of type{}\n".format(type(scalar)))
-    #check for bounds
-    if abs(i) > self.shape[0]:
-      raise ValueError("i index out of bounds, must be in the domain [-{},"
-                       "{}]".format(self.shape[0],self.shape[0]))
-    if abs(j) > self.shape[1]:
-      raise ValueError("j index out of bounds, must be in the domain [-{},"
-                       "{}]".format(self.shape[1],self.shape[1]))
-    if abs(k) > self.shape[2]:
-      raise ValueError("k index out of bounds, must be in the domain [-{},"
-                       "{}]".format(self.shape[2],self.shape[2]))
-
-    #can't assign elements to a coo matrix
-    if self._slices[0].format == 'coo':
-      warn("Tensor slices are of type coo, which don't support index "
-                    "assignment, Tensor slices are being converted to dok.\n",
-                    RuntimeWarning)
-      self.convert_slices('dok')
-
-    self._slices[k][i,j] = scalar
-
-  def get_scalar(self,k,j,i):
-    '''
-      This function gets the i,j,k element of the tensor. paired with the \
-    set_scalar function.
-
-    :Input:
-      i - (integer)
-        The mode 1 index to insert the scalar
-      j - (integer)
-        The mode 2 index to insert the scalar
-      k - (integer)
-       The mode 3 index to insert the scalar
-    :Returns:
-      A[i,j,k] - (scalar number)
-        returns the value at the i,j element of the kth frontal slice.
-    '''
-
-    #check bounds of i,j,k
-    if abs(i) > self.shape[0]:
-      raise ValueError("i index out of bounds, must be in the domain [-{},"
-                       "{}]".format(self.shape[0],self.shape[0]))
-    if abs(j) > self.shape[1]:
-      raise ValueError("j index out of bounds, must be in the domain [-{},"
-                       "{}]".format(self.shape[1],self.shape[1]))
-    if abs(k) > self.shape[2]:
-      raise ValueError("k index out of bounds, must be in the domain [-{},"
-                       "{}]".format(self.shape[2],self.shape[2]))
-
-    if self._slices[0].format == 'coo':
-      warn("{}th slice is COO format, converting to dok to read value, "
-           "please consider converting slices if multiple reads are needed."
-           "\n".format(k),RuntimeWarning)
-      return self._slices[k].asformat('dok')[i,j]
-    else:
-      return self._slices[k][i,j]
 
   def transpose(self, inPlace = False):
     '''
@@ -705,7 +811,7 @@ class Tensor:
           new_slices.append(sp.random(n,T,density=0,format='dok'))
 
         #populate them
-        for (t,slice) in enumerate(self._slices):
+        for t,slice in enumerate(self._slices):
           if self._slice_format == 'dok':
             for ((i,j),val) in slice.iteritems():
               new_slices[j][i,t] = val
@@ -852,10 +958,10 @@ class Tensor:
           B_slices = fft(B._slices)
 
           for t in range(T):
-            new_slices[:,:,t] = np.dot(new_slices[:,:,t],B_slices[:,:,t])
+            new_slices[:,:,t] = dot(new_slices[:,:,t],B_slices[:,:,t])
           ifft(new_slices,overwrite_x=True)
         else:
-          new_slices = np.empty((N,L,T),dtype ='complex128')
+          new_slices = empty((N,L,T),dtype ='complex128')
           A_slices = rfft(self._slices)
           B_slices = rfft(B._slices)
 
@@ -983,6 +1089,7 @@ class Tensor:
         norm += sp_norm(slice,ord = 'fro')**2
 
       return sqrt(norm)/self.frobenius_norm()
+
   def tubal_angle(self,B):
     '''
       This function returns the tubal angle of the current instance of a \
@@ -1391,19 +1498,13 @@ def sparse_givens_rotation(A,i,j,i_swap,apply = False):
     return Tensor(Q_slices)
 
 
-import os
-
-def main():
-  os.chdir('/home/ccolle01/Documents/Tensor.py/')
-  A = Tensor('demo')
-  V,a = normalize(A[:,0,:])
-
-  X = V * a
-
-  print X._slices[0].todense()
-  print A[:,0,:]._slices[0].todense()
-
-  print (A[:,0,:] - V * a).frobenius_norm()
-
 if __name__ == '__main__':
-  main()
+  slices = []
+  for i in range(5):
+    slices.append(sp.random(5,5,density=.5,format='dok'))
+
+  A = Tensor(slices)
+
+  x = sp.random(5,5)
+
+  A[:,0,:] = x
