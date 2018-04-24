@@ -141,20 +141,31 @@ def test_dense_tensor_constructor():
 
 
 '''-----------------------------------------------------------------------------
-                             convert slices test
+                             convert_slices test
 -----------------------------------------------------------------------------'''
-def test_convert_slices():
-  A,slices = set_up_tensor(N,M,T)
-  A.convert_slices('dok')
+def test_convert_slices_dense_to_sparse():
+  A,slices = set_up_tensor(N,M,T,dense=True)
+  B = Tensor(slices)
+  formats = ['dok','coo','dia','lil','csc','csr','bsr']
+  for format in formats:
+    A.convert_slices(format)
+    assert A._slice_format == format
+    for t in range(T):
+      assert A._slices[t].format == format
+    assert A == B
+    #convert back for reformatting
+    A = Tensor(slices)
 
-  assert A._slice_format == 'dok'
-  for t in range(T):
-    assert A._slices[t].format == 'dok'
+def test_convert_slices_sparse_to_dense():
 
-def test_convert_slices_error():
-  A,_ = set_up_tensor(N,M,T,dense=True)
-  with pytest.raises(AttributeError):
-    A.convert_slices('dok')
+  formats = ['dok','coo','dia','lil','csc','csr','bsr']
+  for format in formats:
+    A, slices = set_up_tensor(N, M, T,format=format)
+    A.convert_slices('dense')
+    assert A._slice_format == 'dense'
+    assert isinstance(A._slices,np.ndarray)
+    B = Tensor(slices)
+    assert A == B
 
 '''-----------------------------------------------------------------------------
                               __get_item__ tests
@@ -211,6 +222,26 @@ def test__get_item__subtensor():
 
   assert A[i:,j:,k:] == Tensor(dense_slices[i:,j:,k:])
   assert B[i:,j:,k:] == Tensor(map(lambda x: x[i:,j:],sparse_slices[k:]))
+
+def test__get_item_errors():
+  # wrong key count tests
+  A,_ = set_up_tensor(N,M,T, dense=True)
+  with pytest.raises(ValueError):
+    A[1,2,3,4,5]
+  A,_ = set_up_tensor(N, M, T,format='dok')
+  with pytest.raises(ValueError):
+    A[1, 2, 3, 4, 5]
+
+  #wrong sparse matrix format
+  A,_ = set_up_tensor(N,M,T)
+  with pytest.raises(TypeError):
+    A[1,2,3,4,5]
+  A,_ = set_up_tensor(N,M,T,format='dia')
+  with pytest.raises(TypeError):
+    A[1,2,3,4,5]
+  A, _ = set_up_tensor(N, M, T,format='bsr')
+  with pytest.raises(TypeError):
+    A[1, 2, 3, 4, 5]
 
 
 '''-----------------------------------------------------------------------------
@@ -344,6 +375,64 @@ def test__set_item__sparse_tensor_slice():
   assert (A[N2_start:, M2_start:, T2_start] == sparse_frontal_slice).all()
 
 
+def test__set_item_general_errors():
+  #matrix format errors
+  A, _ = set_up_tensor(N,M,T)
+  with pytest.raises(TypeError):
+    A[0,0,0] = 2
+  A, _ = set_up_tensor(N, M, T,format='dia')
+  with pytest.raises(TypeError):
+    A[0, 0, 0] = 2
+  A, _ = set_up_tensor(N, M, T,format='bsr')
+  with pytest.raises(TypeError):
+    A[0, 0, 0] = 2
+
+  #wrong setting type
+  A, _ = set_up_tensor(N, M, T,format='dok')
+  with pytest.raises(TypeError):
+    A[0, 0, 0] = 'apple'
+
+  #scalars
+  with pytest.raises(ValueError):
+    A[0,0] = 3
+    A[0] = 3
+
+def test__set_item_dense_errors():
+  A,_ = set_up_tensor(N,M,T,format='dok')
+
+
+  #tubal scalars
+  ts = range(T)
+  ts_array = np.array(ts)
+
+  with pytest.raises(ValueError):
+    # wrong indices
+    A[0] = ts
+    A[0] = ts_array
+    A[:,0] = ts
+    A[:, 0] = ts_array
+    A[0, :] = ts
+    A[0, :] = ts_array
+    A[0,0,0,0] = ts_array
+
+
+  B,_ = set_up_tensor(N,M,2*T,format='dok')
+
+  large_ts = range(2*T)
+  large_ts_array = np.array(large_ts)
+  with pytest.raises(ValueError):
+    B[0,0] = ts
+    B[0,0] = ts_array
+
+    A[0,0] = large_ts
+    A[0,0] = large_ts_array
+
+  X = np.random.rand(M,T)
+
+  with pytest.raises(ValueError):
+    A[0,0,0,0] = X
+    A[0,0,0] = X
+    A[0,0,:] = X
 
 '''-----------------------------------------------------------------------------
                               save/load tests
@@ -625,7 +714,6 @@ def test_sparse_t_product():
 
   #check each slice
   for t in range(T):
-    print t_prod_x.shape
     assert np.allclose(t_prod_x[N*t:N*(t+1)],
                       B._slices[t].todense().reshape(N,1),atol=ERROR_TOL)
     assert np.allclose(t_prod_transpose_x[M*t:M*(t+1)],
@@ -655,9 +743,8 @@ def test_dense_t_prod():
 
   #check each slice
   for t in range(T):
-    print t_prod_x.shape
     assert np.allclose(t_prod_x[N*t:N*(t+1)],
-                      B._slices[:,:,t].reshape((M,1)),atol=ERROR_TOL)
+                      B._slices[:,:,t].reshape((N,1)),atol=ERROR_TOL)
     assert np.allclose(t_prod_transpose_x[M*t:M*(t+1)],
                       C._slices[:,:,t].reshape((M,1)),atol=ERROR_TOL)
 
@@ -787,7 +874,6 @@ def test_is_equal_to_tensor():
   B, slices2 = set_up_tensor(N, M, T, format='dok')
   C, slices3 = set_up_tensor(N, M, T, dense=True)
 
-
   assert A.is_equal_to_tensor(A)
   assert not A.is_equal_to_tensor(B)
   assert not A.is_equal_to_tensor(C)
@@ -885,4 +971,4 @@ def test_zeros_errors():
     Te.zeros([1, 'apple',3])
 
 if __name__ == '__main__':
-  test__set_item__sparse_tensor_slice()
+  test_dense_t_prod()
