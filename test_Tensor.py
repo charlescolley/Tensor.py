@@ -967,5 +967,50 @@ def test_zeros_errors():
     Te.zeros(['apple',2,3])
     Te.zeros([1, 'apple',3])
 
+'''-----------------------------------------------------------------------------
+                              empty tensor tests
+-----------------------------------------------------------------------------'''
+def test_empty():
+  #dense case
+  A = Te.empty((N,M,T))
+
+  assert A.shape == (N,M,T)
+  assert A._slice_format == 'dense'
+  assert isinstance(A._slices,np.ndarray) #doesn't matter what the elements are
+
+  A = Te.empty([N, M, T])
+
+  assert A.shape == (N, M, T)
+  assert A._slice_format == 'dense'
+  assert isinstance(A._slices,
+                    np.ndarray)  # doesn't matter what the elements are
+
+  #sparse case
+  A = Te.empty((N, M, T),sparse=True)
+
+  assert A.shape == (N, M, T)
+  assert A._slice_format == 'dok'
+  for t in xrange(T):
+    assert A[t].nnz == 0  #check for 0 matrix
+
+  A = Te.empty([N, M, T],sparse=True)
+
+  assert A.shape == (N, M, T)
+  assert A._slice_format == 'dok'
+  for t in xrange(T):
+    assert A[t].nnz == 0  # doesn't matter what the elements are
+
+def test_empty_errors():
+  #check invalid shape types
+  with pytest.raises(TypeError):
+    Te.empty('apple')
+    Te.empty(np.array([1,2,3]))
+
+  #check invalid shape values
+  with pytest.raises(ValueError):
+    Te.empty((1,2,1))
+    Te.empty((1,2))
+    Te.empty((1,2,3,4))
+
 if __name__ == '__main__':
   test_dense_normalize()

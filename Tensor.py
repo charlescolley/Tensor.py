@@ -1,14 +1,15 @@
 #  Dependencies
 #-----------------------------------------------------------------------------
-import os
 import scipy.sparse as sp
 import pickle
+from copy import deepcopy
 from itertools import izip
 from scipy.sparse.linalg import norm as sp_norm
 from scipy.fftpack import fft, ifft,rfft, fftshift, ifftshift, irfft
 from math import sqrt, hypot
-from numpy import ndarray, conj, NINF, empty, array, dot
+from numpy import ndarray, conj, NINF, array, dot
 from numpy import zeros as np_zeros
+from numpy import empty as np_empty
 from numpy.linalg import norm as np_norm
 from warnings import warn
 from numbers import Number
@@ -60,7 +61,6 @@ class Tensor:
           frobenius_norm
           norm                         UNTESTED
           cos_distance m
-          to_dense
         Overloaded Methods:
           __add__
           __sub__
@@ -72,14 +72,14 @@ class Tensor:
           __setitem__
       Class utilization
         zeros
+        empty
         normalize                      UNTESTED
 
-
     TODO: -write a reshape function
-          -update the convert slices to convert to dense or to sparse
           -write random Tensor
           -write print overloading
           -add in non-zero count private element?
+          -add in complex mode
   '''
 
   def __init__(self, slices = None, set_lateral = True):
@@ -231,7 +231,7 @@ class Tensor:
         slices - (ndarray)
           the slices of the tensor to set. slices must have order at most 3.
         lateral - (optional tuple)
-          a bool indicating whether to set a 2d array as a lateral slice or
+          a bool indicating whether to set a 2d array as a lateral slice o
           as a transverse slice. Only checked for 2d array case.
         key - (optional tuple)
           The indices or slices to index into the tensor and set the elements
@@ -1024,7 +1024,7 @@ class Tensor:
             A_slices = rfft(self._slices)
           B_slices = rfft(B._slices)
 
-          new_slices = empty((N,L,T),dtype ='float64')
+          new_slices = np_empty((N,L,T),dtype ='float64')
 
           #handle the first slice
           for i in xrange(N):
@@ -1334,6 +1334,43 @@ def zeros(shape, dtype = None,format = 'coo'):
     else:
       raise ValueError("shape must be of length 3.\n")
 
+def empty(shape, sparse = False):
+  '''
+  This function takes in a
+  :Input:
+    shape - (list or tuple of ints)
+      a list or tuple of length 3 which indicates the shape of the tensor to \
+      instantiate.
+    sparse - (optional bool)
+      a boolean indicating whether or not to create a sparse tensor. Note \
+      that when a sparse tensor is chosen, it will be equivalent to a zero \
+      tensor. Format returned is dok to ensure ease of setting elements.
+  :Returns:
+    (Tensor)
+      an instance of a tensor.
+  '''
+  if isinstance(shape,list) or isinstance(shape,tuple):
+    if len(shape) == 3:
+      if shape[2] == 1:
+        raise ValueError("3rd mode cannot be of length 1.\n")
+      else:
+        if sparse:
+          slices = []
+          for t in xrange(shape[2]):
+            slices.append(sp.dok_matrix((shape[0],shape[1])))
+        else:
+          slices = np_empty(shape)
+        return Tensor(slices)
+    else:
+      raise ValueError("shape must be of length 3 to create an instance of a "
+                       "tensor.\n passed in shape is of length {}.\n".\
+                       format(len(shape)))
+  else:
+    raise TypeError("shape must be either a length 3 tuple or list, "
+                    "shape passed in is of type {}.\n".format(type(shape)))
+
+
+
 def random(shape):
   '''
     This function takes in a tuple indicating the size, and a dtype string \
@@ -1385,7 +1422,7 @@ def normalize(X,return_sparse_a = True):
                     "}".format(type(X))))
 
   (n,m,T) = X.shape
-  A = empty((m,1,T))
+  A = np_empty((m,1,T))
 
   V_slices = []
 
@@ -1561,6 +1598,30 @@ def sparse_givens_rotation(A,i,j,i_swap,apply = False):
         Q_slices[t][i_swap, i]   =  tubal_scalar2[t]
         Q_slices[t][i, i_swap]   = -tubal_scalar2_conj[t]
     return Tensor(Q_slices)
+
+def MGS(A):
+  '''
+  This function runs the modified gram schmidt algorithm using the inner
+  product induced by the t_product over the tubal scalars field.
+
+  :Inputs:
+    A - (Tensor Instance)
+      the tensor instance to find an orthogonal basis for.
+  :Returns:
+    Q - (Tensor Instance)
+      the orthogonal basis
+    R - (Tensor Instance)
+      The upper triangular matrix (over the tubal scalars) which relates the
+      elements of the orthogonal tensor to the original tensor.
+  '''
+  if isinstance(A,Tensor):
+    (N, M, _) = A.shape
+    V = Tensor(deepcopy(A._slices))
+    for i in xrange(N):
+      pass
+  else:
+    raise(TypeError("this function is defined for a tensor instance,\n"
+                    " A passed in is of type {}".format(type(A))))
 
 
 if __name__ == '__main__':
