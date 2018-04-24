@@ -53,23 +53,23 @@ class Tensor:
           transpose
           squeeze
           twist
-          t-product                    DENSE CASE UNTESTED
+          t-product
           scale_tensor
           find_max
           is_equal_to_tensor
-          frobenius_norm               UNTESTED
+          frobenius_norm
           norm                         UNTESTED
           cos_distance m
           to_dense
         Overloaded Methods:
           __add__
           __sub__
-          __mul__                      UNTESTED
+          __mul__
           __neg__
-          __eq__                       UNTESTED
+          __eq__
           __ne
           __getitem__
-          __setitem__                  UNWRITTEN
+          __setitem__
       Class utilization
         zeros
         normalize                      UNTESTED
@@ -244,26 +244,38 @@ class Tensor:
         if len(key) == 1:
           raise ValueError("key must be at least length 2 to identify which "
                            "tubal scalar to set\n")
-        elif len(key) == 2:
-          if self._slice_format == "dense":
-            self._slices[key[0],key[1],:] = slices
-          else:
-            for t in xrange(T):
-              self._slices[t][key] = slices[t]
         else:
           if isinstance(key[0],slice) or isinstance(key[1],slice):
             raise ValueError("cannot set tubal scalar over 1st or 2nd modes, "
                              "slices can only be set over 3rd mode.\n")
-          if self._slice_format == 'dense':
-            self._slices[key] = slices
+          if len(key) == 3:
+            if isinstance(key[2],int):
+              slice_length = 1
+            else:
+              (start,stop,step) = key[2].indices(self.shape[2])
+              slice_length = (stop - start)/step
           else:
-            slice_length = len(self._slices[key[2]])
-            if slice_length != len(slices):
-              raise ValueError('tubal scalar of length {} is incorrect size, '
-                               'must be of length {}'.format(len(slices),
-                                                             slice_length))
-            for t,slice_t in enumerate(self._slices[key[2]]):
-              slice_t[key[:2]] = slices[t]
+            slice_length = self.shape[2]
+
+          if slice_length != len(slices):
+            raise ValueError('tubal scalar of length {} is incorrect size, '
+                             'must be of length {}'.format(len(slices),
+                                                           slice_length))
+          if len(key) == 2:
+            if self._slice_format == "dense":
+              self._slices[key[0],key[1],:] = slices
+            else:
+              for t in xrange(T):
+                self._slices[t][key] = slices[t]
+          elif len(key) == 3:
+            if self._slice_format == 'dense':
+              self._slices[key] = slices
+            else:
+              for t,slice_t in enumerate(self._slices[key[2]]):
+                slice_t[key[:2]] = slices[t]
+          else:
+            raise ValueError('cannot index or slice into more than 3 '
+                             'modes.key is of length {}\n'.format(len(key)))
       else:
         self._slices = ndarray((1,1,T),buffer=slices.flatten())
         self.shape = (1,1,T)
@@ -559,17 +571,23 @@ class Tensor:
       else:
         self._set_ndarray_as_slices(value,key=key)
     elif isinstance(value,Number):
-      if self._slice_format == 'dense':
-        self._slices[key] = value
+      if len(key) == 3 and all(map(lambda x:isinstance(x,int),key)):
+        if self._slice_format == 'dense':
+          self._slices[key] = value
+        else:
+          self._slices[key[2]][key[:2]] = value
       else:
-        self._slices[key[2]][key[:2]] = value
+        raise ValueError('to assign a scalar, there must be 3 indices to '
+                         'assign the value to an entry in the Tensor.\n')
     elif sp.issparse(value) or self._check_slices_are_sparse(value):
       if len(value.shape) == 2 and isinstance(key[0],int):
         self._set_sparse_matrices_as_slices(value,lateral=False,key=key)
       else:
         self._set_sparse_matrices_as_slices(value,key=key)
     else:
-      raise TypeError("setting value must be either ")
+      raise TypeError("setting value must be one of the following;\n"
+                      "list, ndarray, list of sparse matrices, sparse matrix, "
+                      "or a subclass of a Number.")
 
   def save(self, file_name):
     '''
@@ -621,12 +639,51 @@ class Tensor:
     :References:
       https://docs.scipy.org/doc/scipy/reference/sparse.html
     '''
-    if self._slice_format == "dense":
-      raise AttributeError("this function is for sparse tensors\n")
+    if self._slice_format == format:
+      pass
     else:
-      for t, slice in enumerate(self._slices):
-        self._slices[t] = slice.asformat(format)
-      self._slice_format = format
+      if self._slice_format == "dense":
+        if format == 'coo':
+          sparse_matrix = lambda x: sp.coo_matrix(x)
+        elif format == 'dok':
+          sparse_matrix = lambda x: sp.dok_matrix(x)
+        elif format == 'lil':
+          sparse_matrix = lambda x: sp.lil_matrix(x)
+        elif format == 'csc':
+          sparse_matrix = lambda x: sp.csc_matrix(x)
+        elif format == 'csr':
+          sparse_matrix = lambda x: sp.csr_matrix(x)
+        elif format == 'dia':
+          sparse_matrix = lambda x: sp.dia_matrix(x)
+        elif format == 'bsr':
+          sparse_matrix = lambda x: sp.bsr_matrix(x)
+        else:
+          raise(ValueError('sparse matrix format must be one of;\n'
+                           'coo, dok, lil, csc, csr, dia,or bsr.\n'))
+        new_slices = []
+        for t in xrange(self.shape[2]):
+          new_slices.append(sparse_matrix(self._slices[:,:,t]))
+        self._slice_format = format
+        self._slices = new_slices
+      else:
+        if format == 'dense':
+          new_slices = np_zeros(self.shape)
+          if self._slice_format == 'dok':
+            for t in xrange(self.shape[2]):
+              for ((i,j),v) in self._slices[t].iteritems():
+                new_slices[i,j,t] = v
+          else:
+            for t in xrange(self.shape[2]):
+              slice = self._slices[t]
+              if self._slice_format != 'coo':
+                slice = slice.tocoo()
+              for (i,j,v) in izip(slice.row,slice.col,slice.data):
+                new_slices[i,j,t] = v
+          self._slices = new_slices
+        else:
+          for t, slice in enumerate(self._slices):
+            self._slices[t] = slice.asformat(format)
+        self._slice_format = format
 
   def resize(self,shape,order = 'C'):
     '''
@@ -906,10 +963,6 @@ class Tensor:
       self._slices = new_slices
       self._shape = (self.shape[0],self.shape[2],self.shape[1])
 
-  def to_transverse(self):
-    pass
-
-
   def t_product(self,B,transpose = False):
     '''
       This function takes in another tensor instance and computes the \
@@ -946,6 +999,7 @@ class Tensor:
                            "and {} respectively"
                            "".format(B.shape, N, T))
       else:
+        print M,M2
         if M != M2 or T != T2:
           raise ValueError("input Tensor B invalid shape {},\n mode 1 "
                            "dimension and mode 3 dimension must be equal to {} "
@@ -961,9 +1015,14 @@ class Tensor:
             new_slices[:,:,t] = dot(new_slices[:,:,t],B_slices[:,:,t])
           ifft(new_slices,overwrite_x=True)
         else:
-          new_slices = empty((N,L,T),dtype ='complex128')
-          A_slices = rfft(self._slices)
+          if transpose:
+            A_slices =rfft(self.transpose()._slices)
+            (N,M,T) = A_slices.shape
+          else:
+            A_slices = rfft(self._slices)
           B_slices = rfft(B._slices)
+
+          new_slices = empty((N,L,T),dtype ='float64')
 
           #handle the first slice
           for i in xrange(N):
@@ -988,20 +1047,22 @@ class Tensor:
           for t in xrange(1, end_T):
             for i in xrange(N):
               for j in xrange(L):
-                real = A_slices[i,0,t]*B_slices[0,j, t] - \
-                       A_slices[i,0,t+1]*B_slices[0,j,t+1]
-                imaginary = A_slices[i,0,t+1]*B_slices[0,j,t] + \
-                            A_slices[i,0,t]*B_slices[0,j,t+1]
-                new_slices[i,j,t] = complex(real,imaginary)
-                new_slices[i,j,t+T/2] = complex(real,-imaginary)
+                real = A_slices[i,0,2*t-1]*B_slices[0,j, 2*t-1] - \
+                       A_slices[i,0,2*t]*B_slices[0,j,2*t]
+                imaginary = A_slices[i,0,2*t]*B_slices[0,j,2*t-1] + \
+                            A_slices[i,0,2*t-1]*B_slices[0,j,2*t]
+                new_slices[i,j,t*2] = imaginary
+                new_slices[i,j,t*2 -1] = real
                 for k in xrange(1,M):
-                  real = A_slices[i, k, t] * B_slices[k, j, t] - \
-                         A_slices[i, k, t + 1] * B_slices[k, j, t + 1]
-                  imaginary = A_slices[i, k, t + 1] * B_slices[k, j, t] +\
-                              A_slices[i, k, t] * B_slices[k, j, t + 1]
-                  new_slices[i, j, t] += complex(real,imaginary)
-                  new_slices[i, j, t + T/2] += complex(real,-imaginary)
+                  real = A_slices[i, k, 2*t-1] * B_slices[k, j, 2*t-1] - \
+                         A_slices[i, k, 2*t] * B_slices[k, j, 2*t]
+                  imaginary = A_slices[i, k, 2*t] * B_slices[k, j, 2*t-1] +\
+                              A_slices[i, k, 2*t-1] * B_slices[k, j, 2*t]
+                  new_slices[i, j, 2*t] += imaginary
+                  new_slices[i, j, 2*t-1] += real
 
+        irfft(new_slices,overwrite_x=True)
+        return Tensor(new_slices)
       else:
         new_slices = []
         for i in xrange(T):
@@ -1204,7 +1265,7 @@ class Tensor:
     else:
       for t in xrange(self.shape[2]):
         # if other is of type coo, change to something one can index into
-        if other._slice_format == 'coo':
+        if other._slice_format in ['coo','dia','bsr']:
           other_slice = other._slices[t].todok()
         else:
           other_slice = other._slices[t]
