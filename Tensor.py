@@ -628,14 +628,16 @@ class Tensor:
   def convert_slices(self,format):
     '''
       This function will convert all of the slices to a desired sparse matrix \
-    format, this derives its functionality from the scipy.sparse._.asformat \
-    function. To convert to a dense tensor, use todense().
+    format or to a dense ndarray, this derives its functionality from the \
+    scipy.sparse._.asformat function. To convert to a dense tensor, use the \
+     dense keyword.
 
     :Input:
       format- (string)
         string that specifies the possible formats, valid formats are the \
         supported formats of scipy sparse matrices. see scipy reference for \
-        most up to date supported formats.
+        most up to date supported formats. if format is set to 'dense' it \
+        will convert the tensor to an ndarray.
     :References:
       https://docs.scipy.org/doc/scipy/reference/sparse.html
     '''
@@ -814,7 +816,7 @@ class Tensor:
 
     :Input:
       X - (optional n x m sparse matrix or ndarray)
-        A sparse matrix or ndarrayto be squeezed. Note if none is passed in, \
+        A sparse matrix or ndarrayto be squeezed. Note if  none is passed in, \
         then each frontal slice in self._slices will be squeezed and the \
         instance of the Tensor calling this function will be altered. \
     :Returns:
@@ -1358,9 +1360,11 @@ def random(shape):
 
 def normalize(X,return_sparse_a = True):
   '''
-  This function takes in a lateral slice and returns a lateral slice a and \
-  lateral slice V with frobenius norm 1 such that V t_prod a is the original \
-  lateral slice passed in.
+  This function takes in a tensor slice and returns a transverse slice a and \
+  tensor V such that each lateral slice V has Frobenius norm 1 and that
+  V[:,j,:] * a[j,:,:] = self._slices[:,j,:]. Note that is not the same
+  finding an orthorgonal basis for the Tensor, just a more convinvient way to
+  compute multiple normalizations at once.
 
   :Input:
     X - (Tensor Instance)

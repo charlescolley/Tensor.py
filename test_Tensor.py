@@ -930,10 +930,7 @@ def test_dense_normalize():
   V,a = Te.normalize(A)
 
   for j in range(M):
-    assert (V[:,j,:] * a[:,j,:]).is_equal_to_tensor(A[:,j,:],ERROR_TOL)
-
-
-
+    assert (V[:,j,:] * a[j,:,:]).is_equal_to_tensor(A[:,j,:],ERROR_TOL)
 
 
 '''-----------------------------------------------------------------------------
@@ -971,4 +968,4 @@ def test_zeros_errors():
     Te.zeros([1, 'apple',3])
 
 if __name__ == '__main__':
-  test_dense_t_prod()
+  test_dense_normalize()
