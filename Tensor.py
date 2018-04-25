@@ -410,8 +410,7 @@ class Tensor:
                              "respectively.\n".format(map(type, key)))
           #zero out the elements
           if self._slice_format == 'dense':
-            self._slices[key[0], key[1], :] = \
-              np_zeros(((stop - start) / step, T))
+            self._slices[key[0], key[1], :] = 0
           else:
             for t in xrange(T):
               if self._slice_format == 'dok':
@@ -424,109 +423,20 @@ class Tensor:
         elif len(key) == 3:
           if isinstance(key[0], int) and isinstance(key[1], slice)\
               and isinstance(key[2],slice):
-            #transverse
-            (start2, stop2, step2) = key[1].indices(M)
-            (start3, stop3, step3) = key[2].indices(T)
-            if self._slice_format == 'dense':
-              def assign(A, i, j, v):
-                A[key[0],start2 + i*step2,start3 +step3*j] = v
-            else:
-              def assign(A, i, j, v):
-                print '\n'
-                print self.shape,len(A), A[0].shape
-                print key
-                print start3, step3, start2, step2, i ,j
-                print start3 +step3*j
-                print start2 + i*step2
-                A[start3 +step3*j][key[0],start2 + i*step2] = v
-
-            mode1_size = 1
-            mode2_size = (stop2 - start2) / step2
-            mode3_size = (stop3 - start3) / step3
+            self._matrix_set_helper(key,slices,mode='transverse')
           elif isinstance(key[0], slice) and isinstance(key[1], int)\
               and isinstance(key[2],slice):
-            #lateral
-            (start1, stop1, step1) = key[0].indices(N)
-            (start3, stop3, step3) = key[2].indices(T)
-            if self._slice_format == 'dense':
-              def assign(A, i, j, v):
-                A[start1 + i*step1,key[1],start3 +step3*j] = v
-            else:
-              def assign(A, i, j, v):
-                A[start3 +step3*j][start1 + i*step1,key[1]] = v
-
-            mode1_size = (stop1 - start1) / step1
-            mode2_size = 1
-            mode3_size = (stop3 - start3) / step3
+            self._matrix_set_helper(key,slices,mode='lateral')
           elif isinstance(key[0], slice) and isinstance(key[1], slice)\
               and isinstance(key[2],int):
-            #frontal
-            (start1, stop1, step1) = key[0].indices(N)
-            (start2, stop2, step2) = key[1].indices(M)
-            if self._slice_format == 'dense':
-              def assign(A, i, j, v):
-                A[start1 + i*step1,start2 +step2*j,key[2]] = v
-            else:
-              def assign(A, i, j, v):
-                A[key[2]][start1 + i*step1,start2 + j*step2] = v
-
-            mode1_size = (stop1 - start1) / step1
-            mode2_size = (stop2 - start2) / step2
-            mode3_size = 1
+            self._matrix_set_helper(key,slices,mode='frontal')
           else:
             raise ValueError("key must contain two slices and 1 index to "
                              "properly assign a matrix to a subsection of the "
                              "tensor.\n")
-          if self._slice_format == 'dense':
-            if mode1_size == 1:
-              shape = (mode2_size,mode3_size)
-            elif mode2_size == 1:
-              shape = (mode1_size, mode3_size)
-            elif mode3_size == 1:
-              shape = (mode1_size,mode2_size)
-            else:
-              shape = (mode1_size,mode2_size,mode3_size)
-
-            self._slices[key[0], key[1], key[2]] = np_zeros(shape)
-          elif isinstance(key[2],int):
-            if self._slice_format == 'dok':
-              for (i,j) in self._slices[key[2]][key[0],key[1]].iterkeys():
-                assign(self._slices,i,j,0)
-            else:
-              slice_t = self._slices[key[2]][key[0],key[1]].tocoo()
-              for (i,j) in izip(slice_t,row,slice_t.col):
-                assign(self._slices,i,j,0)
-          else:
-            mode_3_indices = key[2].indices(T)
-            if self._slice_format == 'dok':
-              for t in xrange(*mode_3_indices):
-                if isinstance(key[1],int):
-                  for (i,_) in self._slices[t][key[0],key[1]].iterkeys():
-                    assign(self._slices,i,t,0)
-                else:
-                  for (_,j) in self._slices[t][key[0],key[1]].iterkeys():
-                    assign(self._slices,j,t,0)
-            else:
-              for t in xrange(*mode_3_indices):
-                slice_t = self._slices[t][key[0],key[1]].tocoo()
-                if isinstance(key[1],int):
-                  for i in slice_t.row:
-                    assign(self._slices, i, t, 0)
-                else:
-                  for j in slice_t.col:
-                    assign(self._slices, j, t, 0)
         else:
-          raise ValueError("indices must have at most 3 indices and/or "
+          raise ValueError("key must have at most 3 indices and/or "
                            "slices, {} passed in".format(len(key)))
-
-        if slices.format == 'dok':
-          for ((i, j), v) in slices.iteritems():
-            assign(self._slices, i, j, v)
-        else:
-          if slices.format != 'coo':
-            slices = slices.tocoo()
-          for (i, j, v) in izip(slices.row, slices.col, slices.data):
-            assign(self._slices, i, j, v)
       else:
         (N,T) = slices.shape
         new_slices = []
@@ -542,18 +452,130 @@ class Tensor:
         self._slice_format = slices.format
     else:
       if key:
-        for t,slice_t in enumerate(self._slices[key[2]]):
-          slice_t[key[key[0],key[1]]] = slices[t]
+        T = self.shape[2]
+        if len(key) == 1:
+          if isinstance(key,int):
+            self._matrix_set_helper((slice(None),slice(None),key),slices[0])
+          else:
+            for (i,t) in enumerate(xrange(*key.indices(T))):
+              self._matrix_set_helper((slice(None),slice(None),t),slices[i])
+        elif len(key) == 2:
+          if isinstance(key[0],int) and isinstance(key[1],int):
+            raise ValueError("inefficient to set tubal scalars with list of "
+                             "sparse matrices,\n set with array or list of "
+                             "elements.\n")
+          else:
+            if len(slices) >= T:
+              for t in xrange(T):
+                self._matrix_set_helper((key[0],key[1],t),slices[t])
+            else:
+              raise ValueError("not enough frontal slices to set elements of "
+                               "the tensor. slices are of length {}, need at "
+                               "least {} slices.\n".format(len(slice),T))
+        elif len(key) == 3:
+          if isinstance(key[2],int):
+            self._matrix_set_helper(key,slices[0])
+          else:
+            for (i,t) in enumerate(xrange(*key[2].indices(T))):
+              self._matrix_set_helper((key[0],key[1],t),slices[i])
+        else:
+          raise ValueError("key must have at most 3 indices and/or "
+                           "slices, {} passed in".format(len(key)))
       else:
         self._slices = slices
         (N,M) = slices[0].shape
         self.shape = (N,M,len(slices))
 
-  def _check_slices_are_sparse(slices):
-    for slice in slices:
-      if not sp.issparse(slice):
-        return False
-    return True
+  def _matrix_set_helper(self,key,slices,mode='frontal'):
+    (N,M,T) = self.shape
+
+    #define assigning functions
+    if mode == 'frontal':
+      (start1, stop1, step1) = key[0].indices(N)
+      if isinstance(key[1],int):
+        start2 = key[1]
+        step2 = 1
+      else:
+        (start2, stop2, step2) = key[1].indices(M)
+
+      if self._slice_format == 'dense':
+        def assign(A, i, j, v):
+          A[start1 + i * step1, start2 + step2 * j, key[2]] = v
+      else:
+        def assign(A, i, j, v):
+          A[key[2]][start1 + i * step1, start2 + j * step2] = v
+
+    elif mode == 'lateral':
+      (start1, stop1, step1) = key[0].indices(N)
+      (start3, stop3, step3) = key[2].indices(T)
+      if self._slice_format == 'dense':
+        def assign(A, i, j, v):
+          A[start1 + i * step1, key[1], start3 + step3 * j] = v
+      else:
+        def assign(A, i, j, v):
+          A[start3 + step3 * j][start1 + i * step1, key[1]] = v
+
+    else:  # transverse
+      (start2, stop2, step2) = key[1].indices(M)
+      (start3, stop3, step3) = key[2].indices(T)
+      if self._slice_format == 'dense':
+        def assign(A, i, j, v):
+          A[key[0], start2 + i * step2, start3 + step3 * j] = v
+      else:
+        def assign(A, i, j, v):
+          A[start3 + step3 * j][key[0], start2 + i * step2] = v
+
+    #zero out the elements not being set
+
+    if self._slice_format == 'dense':
+      self._slices[key] = 0
+    else:
+      if isinstance(key[2], int):
+        if self._slice_format == 'dok':
+          for (i, j) in self._slices[key[2]][key[0], key[1]].iterkeys():
+            assign(self._slices, i, j, 0)
+        else:
+          slice_t = self._slices[key[2]][key[0], key[1]].tocoo()
+          for (i, j) in izip(slice_t, row, slice_t.col):
+            assign(self._slices, i, j, 0)
+      else:
+        if self._slice_format == 'dok':
+          for t in xrange(*key[2].indices(T)):
+            if isinstance(key[1], int):
+              for (i, _) in self._slices[t][key[0], key[1]].iterkeys():
+                assign(self._slices, i, t, 0)
+            else:
+              for (_, j) in self._slices[t][key[0], key[1]].iterkeys():
+                assign(self._slices, j, t, 0)
+        else:
+          for t in xrange(*key[2].indices(T)):
+            slice_t = self._slices[t][key[0], key[1]].tocoo()
+            if isinstance(key[1], int):
+              for i in slice_t.row:
+                assign(self._slices, i, t, 0)
+            else:
+              for j in slice_t.col:
+                assign(self._slices, j, t, 0)
+
+    #set the non-zero values
+    if slices.format == 'dok':
+      for ((i, j), v) in slices.iteritems():
+        assign(self._slices, i, j, v)
+    else:
+      if slices.format != 'coo':
+        slices = slices.tocoo()
+      for (i, j, v) in izip(slices.row, slices.col, slices.data):
+        assign(self._slices, i, j, v)
+
+
+  def _check_slices_are_sparse(self,slices):
+    if isinstance(slices,list):
+      for slice in slices:
+        if not sp.issparse(slice):
+          return False
+      return True
+    else:
+      return False
 
   def __setitem__(self, key, value):
     if self._slice_format in ['coo', 'dia', 'bsr']:
@@ -579,11 +601,16 @@ class Tensor:
       else:
         raise ValueError('to assign a scalar, there must be 3 indices to '
                          'assign the value to an entry in the Tensor.\n')
-    elif sp.issparse(value) or self._check_slices_are_sparse(value):
+    elif isinstance(value,Tensor):
+      #recurse on slices if Tensor passed in
+      self.__setitem__(key,value._slices)
+    elif sp.issparse(value):
       if len(value.shape) == 2 and isinstance(key[0],int):
         self._set_sparse_matrices_as_slices(value,lateral=False,key=key)
       else:
         self._set_sparse_matrices_as_slices(value,key=key)
+    elif self._check_slices_are_sparse(value):
+      self._set_sparse_matrices_as_slices(value,key=key)
     else:
       raise TypeError("setting value must be one of the following;\n"
                       "list, ndarray, list of sparse matrices, sparse matrix, "
@@ -1395,7 +1422,7 @@ def random(shape):
   '''
   raise NotImplementedError("write random function")
 
-def normalize(X,return_sparse_a = True):
+def normalize(X,return_sparse_a = False):
   '''
   This function takes in a tensor slice and returns a transverse slice a and \
   tensor V such that each lateral slice V has Frobenius norm 1 and that
@@ -1615,10 +1642,18 @@ def MGS(A):
       elements of the orthogonal tensor to the original tensor.
   '''
   if isinstance(A,Tensor):
-    (N, M, _) = A.shape
+    (N, M, T) = A.shape
     V = Tensor(deepcopy(A._slices))
+    Q = empty(A.shape)
+    R = empty((N,N,T))
+
     for i in xrange(N):
-      pass
+      Q[:,i,:], R[i,i] = normalize(V[:,i,:])
+      for j in xrange(M):
+        R[i,j] = Q[:,i,:].t_product(V[:,j,:],transpose=True)
+        V[:,j,:] = V[:,j,:] - R[i,j] * Q[:,i,:]
+
+    return Q, R
   else:
     raise(TypeError("this function is defined for a tensor instance,\n"
                     " A passed in is of type {}".format(type(A))))
@@ -1631,6 +1666,4 @@ if __name__ == '__main__':
 
   A = Tensor(slices)
 
-  x = sp.random(5,5)
-
-  A[:,0,:] = x
+  MGS(A)
