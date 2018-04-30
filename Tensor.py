@@ -8,6 +8,7 @@ from scipy.sparse.linalg import norm as sp_norm
 from scipy.fftpack import fft, ifft,rfft, fftshift, ifftshift, irfft
 from math import sqrt, hypot
 from numpy import ndarray, conj, NINF, array, dot
+from numpy.random import seed, rand
 from numpy import zeros as np_zeros
 from numpy import empty as np_empty
 from numpy.linalg import norm as np_norm
@@ -144,11 +145,53 @@ class Tensor:
                                                                  other.shape))
       else:
         if add:
-          return Tensor(
-            map(lambda (x, y): x + y, zip(self._slices, other._slices)))
+          if self._slice_format == 'dense':
+            if other._slice_format == 'dense':
+              return Tensor(self._slices + other._slices)
+            else:
+              new_slices = deepcopy(self._slices)
+              if other._slice_format == 'dok':
+                for t in xrange(self.shape[2]):
+                  for ((i,j),v) in other._slices[t].iteritems():
+                    new_slices[i,j,t] += v
+              else:
+                for t in xrange(self.shape[2]):
+                  slice_t = other._slices[t]
+                  if other._slice_format != 'coo':
+                    slice_t = slice_t.tocoo()
+                  for (i,j,v) in izip(slice_t.row,slice_t.col,slice_t.data):
+                    new_slices[i,j,t] += v
+              return Tensor(new_slices)
+          else:
+            if other._slice_format == 'dense':
+              return other + self
+            else:
+              return Tensor(
+                map(lambda (x, y): x + y, zip(self._slices, other._slices)))
         else:
-          return Tensor(
-            map(lambda (x, y): x - y, zip(self._slices, other._slices)))
+          if self._slice_format == 'dense':
+            if other._slice_format == 'dense':
+              return Tensor(self._slices - other._slices)
+            else:
+              new_slices = deepcopy(self._slices)
+              if other._slice_format == 'dok':
+                for t in xrange(self._shape[2]):
+                  for ((i,j),v) in other._slices[t].iteritems():
+                    new_slices[i,j,t] -= v
+              else:
+                for t in xrange(self.shape[2]):
+                  slice_t = other._slices[t]
+                  if other._slice_format != 'coo':
+                    slice_t = slice_t.tocoo()
+                  for (i,j,v) in izip(slice_t.row,slice_t.col,slice_t.data):
+                    new_slices[i,j,t] -= v
+              return Tensor(new_slices)
+          else:
+            if other._slice_format == 'dense':
+              return -other + self
+            else:
+              return Tensor(
+                map(lambda (x, y): x - y, zip(self._slices, other._slices)))
     else:
       raise TypeError("input {} passed in is not an instance of a Tensor, "
                       "parameter passed in is of type {}".
@@ -156,6 +199,7 @@ class Tensor:
 
   def __add__(self, other):
     return self._add_sub_helper(other,add =True)
+
   def __sub__(self,other):
     return self._add_sub_helper(other,add =False)
 
@@ -218,8 +262,6 @@ class Tensor:
           raise TypeError('{} format does not support slice assignment,\n use '
                           'self.convert_slices to reformat the tensor to dok or '
                           'lil format'.format(self._slice_format))
-
-
 
   def _set_ndarray_as_slices(self, slices,lateral = True, key = None):
     '''
@@ -336,12 +378,34 @@ class Tensor:
           self._slice_format = 'dense'
     else:
       if key:
-        self._slices[key] = slices
+        if len(key) == 1:
+          if self._slice_format == 'dense':
+            self._slices[:,:,key] = slices
+          else:
+            if isinstance(key[2],int):
+              self._slices[key[2]][key[:2]] = slices
+            else:
+              for (i,t) in enumerate(xrange(*key[2].indices(self.shape[2]))):
+                self._slices[t] = slices[:,:,i]
+        elif len(key) == 2:
+          if self._slice_format == 'dense':
+            self._slices[key[0],key[1],:] = slices
+          else:
+            for t in xrange(self.shape[2]):
+              self._slices[t][key] = slices[:,:,t]
+        elif len(key) == 3:
+          if self._slice_format == 'dense':
+            self._slices[key] = slices
+          else:
+            for (i,t) in enumerate(xrange(*key[2].indices(self.shape[2]))):
+              self._slices[t][key[:2]] = slices[:,:,i]
+        else:
+          raise ValueError("key must be at most length 3, key is length {"
+                           "}\n".format(len(key)))
       else:
         self._slices = slices
         self.shape = slices.shape
         self._slice_format = 'dense'
-
 
   def _set_sparse_matrices_as_slices(self,slices,lateral = True, key=None):
     '''
@@ -518,6 +582,7 @@ class Tensor:
     else:  # transverse
       (start2, stop2, step2) = key[1].indices(M)
       (start3, stop3, step3) = key[2].indices(T)
+
       if self._slice_format == 'dense':
         def assign(A, i, j, v):
           A[key[0], start2 + i * step2, start3 + step3 * j] = v
@@ -539,8 +604,9 @@ class Tensor:
           for (i, j) in izip(slice_t, row, slice_t.col):
             assign(self._slices, i, j, 0)
       else:
+        (start,stop,step) = key[2].indices(T)
         if self._slice_format == 'dok':
-          for t in xrange(*key[2].indices(T)):
+          for t in xrange((stop-start)/step):
             if isinstance(key[1], int):
               for (i, _) in self._slices[t][key[0], key[1]].iterkeys():
                 assign(self._slices, i, t, 0)
@@ -548,7 +614,7 @@ class Tensor:
               for (_, j) in self._slices[t][key[0], key[1]].iterkeys():
                 assign(self._slices, j, t, 0)
         else:
-          for t in xrange(*key[2].indices(T)):
+          for t in xrange((stop - start)/step):
             slice_t = self._slices[t][key[0], key[1]].tocoo()
             if isinstance(key[1], int):
               for i in slice_t.row:
@@ -566,7 +632,6 @@ class Tensor:
         slices = slices.tocoo()
       for (i, j, v) in izip(slices.row, slices.col, slices.data):
         assign(self._slices, i, j, v)
-
 
   def _check_slices_are_sparse(self,slices):
     if isinstance(slices,list):
@@ -651,8 +716,7 @@ class Tensor:
       self._slice_format = private_elements[1]
       self.shape = private_elements[2]
 
-
-  def convert_slices(self,format):
+  def convert_slices(self,format, return_slices=False):
     '''
       This function will convert all of the slices to a desired sparse matrix \
     format or to a dense ndarray, this derives its functionality from the \
@@ -665,11 +729,18 @@ class Tensor:
         supported formats of scipy sparse matrices. see scipy reference for \
         most up to date supported formats. if format is set to 'dense' it \
         will convert the tensor to an ndarray.
+      return_slices - (optional bool)
+        a boolean which indicates whether or not to apply the conversion to \
+        the tensor the function is called from, or to return the slices \
+        generated.
     :References:
       https://docs.scipy.org/doc/scipy/reference/sparse.html
     '''
     if self._slice_format == format:
-      pass
+      if return_slices:
+        return deepcopy(self._slices)
+      else:
+        pass
     else:
       if self._slice_format == "dense":
         if format == 'coo':
@@ -692,8 +763,12 @@ class Tensor:
         new_slices = []
         for t in xrange(self.shape[2]):
           new_slices.append(sparse_matrix(self._slices[:,:,t]))
-        self._slice_format = format
-        self._slices = new_slices
+
+        if return_slices:
+          return new_slices
+        else:
+          self._slice_format = format
+          self._slices = new_slices
       else:
         if format == 'dense':
           new_slices = np_zeros(self.shape)
@@ -708,11 +783,24 @@ class Tensor:
                 slice = slice.tocoo()
               for (i,j,v) in izip(slice.row,slice.col,slice.data):
                 new_slices[i,j,t] = v
-          self._slices = new_slices
+          if return_slices:
+            return new_slices
+          else:
+            self._slices = new_slices
         else:
+          if return_slices:
+            slices = []
+
           for t, slice in enumerate(self._slices):
-            self._slices[t] = slice.asformat(format)
-        self._slice_format = format
+            if return_slices:
+              slices.append(slice.asformat(format))
+            else:
+              self._slices[t] = slice.asformat(format)
+
+        if return_slices:
+          return slices
+        else:
+          self._slice_format = format
 
   def resize(self,shape,order = 'C'):
     '''
@@ -744,8 +832,6 @@ class Tensor:
       self._shape = shape
     else:
       raise NotImplementedError("resize needs to have the sparse case finished")
-
-
 
   def transpose(self, inPlace = False):
     '''
@@ -1028,7 +1114,6 @@ class Tensor:
                            "and {} respectively"
                            "".format(B.shape, N, T))
       else:
-        print M,M2
         if M != M2 or T != T2:
           raise ValueError("input Tensor B invalid shape {},\n mode 1 "
                            "dimension and mode 3 dimension must be equal to {} "
@@ -1038,7 +1123,10 @@ class Tensor:
       if self._slice_format == 'dense':
         if self._slices.dtype.name == 'complex128':
           new_slices = fft(self._slices)
-          B_slices = fft(B._slices)
+          if B._slice_format != 'dense':
+            B_slices = fft(B.convert_slices('dense',return_slices=True))
+          else:
+            B_slices = fft(B._slices)
 
           for t in range(T):
             new_slices[:,:,t] = dot(new_slices[:,:,t],B_slices[:,:,t])
@@ -1049,7 +1137,11 @@ class Tensor:
             (N,M,T) = A_slices.shape
           else:
             A_slices = rfft(self._slices)
-          B_slices = rfft(B._slices)
+
+          if B._slice_format != 'dense':
+            B_slices = rfft(B.convert_slices('dense',return_slices=True))
+          else:
+            B_slices = rfft(B._slices)
 
           new_slices = np_empty((N,L,T),dtype ='float64')
 
@@ -1093,6 +1185,10 @@ class Tensor:
         irfft(new_slices,overwrite_x=True)
         return Tensor(new_slices)
       else:
+        if B._slice_format != 'csr':
+          B_slices = B.convert_slices('csr',return_slices=True)
+        else:
+          B_slices = B._slices
         new_slices = []
         for i in xrange(T):
           if transpose:
@@ -1101,9 +1197,9 @@ class Tensor:
             new_slice = sp.random(N,L,density=0)
           for j in xrange(T):
             if transpose:
-              new_slice += self._slices[(j + (T - i))%T].T * B._slices[j]
+              new_slice += self._slices[(j + (T - i))%T].T * B_slices[j]
             else:
-              new_slice += self._slices[(i + (T - j))%T] * B._slices[j]
+              new_slice += self._slices[(i + (T - j))%T] * B_slices[j]
           new_slices.append(new_slice)
 
       return Tensor(new_slices)
@@ -1216,7 +1312,6 @@ class Tensor:
         else:
           return max(map(lambda x:x.max(),self._slices))
 
-
   def zero_out(self,threshold):
     '''
       This function iterates through the non-zeros of the tensor and zeros \
@@ -1235,7 +1330,6 @@ class Tensor:
               self._slices[i,j,k] = 0
     else:
       pass
-
 
   def is_equal_to_tensor(self,other, tol = None):
     '''
@@ -1319,14 +1413,6 @@ class Tensor:
               return False
     return True
 
-  def todense(self):
-    '''
-      This function will convert the current tensor instance into a dense \
-    tensor, or if make_new is true, will return a dense tensor instance.
-    '''
-    raise NotImplementedError("condense this function with convert format")
-
-
 '''-----------------------------------------------------------------------------
                               NON-CLASS FUNCTIONS
 -----------------------------------------------------------------------------'''
@@ -1363,7 +1449,9 @@ def zeros(shape, dtype = None,format = 'coo'):
 
 def empty(shape, sparse = False):
   '''
-  This function takes in a
+  This function takes in a list or tuple of three elements, and an optional\
+  bool and returns a tensor with either no elements, or no initialized \
+  elements depending on whether the Tensor is requested to be sparse or not.
   :Input:
     shape - (list or tuple of ints)
       a list or tuple of length 3 which indicates the shape of the tensor to \
@@ -1396,38 +1484,64 @@ def empty(shape, sparse = False):
     raise TypeError("shape must be either a length 3 tuple or list, "
                     "shape passed in is of type {}.\n".format(type(shape)))
 
-
-
-def random(shape):
+def random(shape,density = 0.1,dtype = 'float64' ,format='coo',
+           random_state = None):
   '''
     This function takes in a tuple indicating the size, and a dtype string \
-  compatible with scipy's data types and returns a Tensor instance \
-  corresponding to shape passed of a given density, .
+  compatible with scipy/numpy data types and returns a Tensor instance \
+  corresponding to values which are drawn from a uniform distribution from [ \
+  0,1) of the shape passed in. Sparsity is controlled by the density \
+  parameter which is ignored if the desired tensor will be dense.
 
   :Input:
     shape - (list or tuple of ints)
       a list or tuple with the dimensions of each of the 3 modes. must be of \
       length 3.
-    dtype - (dtype)
-      a datatype consistent with scipy sparse datatype standards
-    format - (string)
-      the format of the sparse matrices to produce, default is COO.
-    random_state - (int)
+    density - (optional float)
+      the amount of non-zeroes hoped to be introduced into the sparse tensor.
+    dtype - (optional dtype)
+      a datatype consistent with scipy or numpy datatype standards. default np \
+      float64.
+    format - (optional string)
+      the format of the sparse matrices to produce, default is coo.
+    random_state - (optional int)
       an integer which is passed in as a seed for each of the slices. Each \
       slice will increment the seed value by 1, so each slice will have a \
       unique seed.
   :Returns:
-    random_Tensor - (Tensor Instance)
-      an instance of a Tensor of the appropriate dimensions with all zeros.
+    (Tensor Instance)
+
   '''
-  raise NotImplementedError("write random function")
+  if isinstance(shape,list) or isinstance(shape,tuple):
+    if len(shape) == 3:
+      if format =='dense':
+        if random_state is not None: #seeds Mersenne Twister algorithm
+          seed(seed=random_state)
+        if dtype != 'float64':
+          return Tensor(rand(*shape).astype(dtype))
+        else:
+          return Tensor(rand(*shape))
+      else:
+        slices = []
+        for t in xrange(shape[2]):
+          if random_state is not None:
+            random_state += 1 #added to make each slice different
+          slices.append(sp.rand(shape[0],shape[1],density=density,
+                                format=format,dtype = dtype,
+                                random_state=random_state))
+        return Tensor(slices)
+    else:
+      raise ValueError("shape must be of length 3.")
+  else:
+    raise TypeError("shape must be either a list or tuple of length 3.")
+
 
 def normalize(X,return_sparse_a = False):
   '''
   This function takes in a tensor slice and returns a transverse slice a and \
   tensor V such that each lateral slice V has Frobenius norm 1 and that
   V[:,j,:] * a[j,:,:] = self._slices[:,j,:]. Note that is not the same
-  finding an orthorgonal basis for the Tensor, just a more convinvient way to
+  finding an orthogonal basis for the Tensor, just a more convenient way to
   compute multiple normalizations at once.
 
   :Input:
@@ -1560,6 +1674,8 @@ def sparse_givens_rotation(A,i,j,i_swap,apply = False):
   TODO:
     handle i_swap tests to ensure that i =/= i_swap
   '''
+  raise NotImplementedError("needs debugging.")
+
   #check for valid input
   if A._slice_format == 'coo':
     raise ValueError("cannot index into a coo matrix, convert with "
@@ -1651,7 +1767,7 @@ def MGS(A):
       Q[:,i,:], R[i,i] = normalize(V[:,i,:])
       for j in xrange(M):
         R[i,j] = Q[:,i,:].t_product(V[:,j,:],transpose=True)
-        V[:,j,:] = V[:,j,:] - R[i,j] * Q[:,i,:]
+        V[:,j,:] = V[:,j,:] - Q[:,i,:] * R[i,j]
 
     return Q, R
   else:
@@ -1661,9 +1777,11 @@ def MGS(A):
 
 if __name__ == '__main__':
   slices = []
-  for i in range(5):
-    slices.append(sp.random(5,5,density=.5,format='dok'))
+  for i in range(25):
+    slices.append(sp.random(500,500,density=.5,format='dok'))
 
   A = Tensor(slices)
 
-  MGS(A)
+  Q,R = MGS(A)
+
+  print (A - Q * R).frobenius_norm()/A.frobenius_norm()

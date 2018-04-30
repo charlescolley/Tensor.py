@@ -364,12 +364,17 @@ def test__set_item__sparse_tensor_slice():
   slices = A[N2_start, M2_start:, T2_start:]._slices
   sparse_transverse_slice = sparse_transverse_slice.todok()
   for (t, slice) in enumerate(slices):
-    assert (slice != sparse_transverse_slice[t, :]).nnz == 0
+    print slice
+    print 'blah'
+    print sparse_transverse_slice[:,t].T
+    print slice != sparse_transverse_slice[:,t].T
+    assert (slice != sparse_transverse_slice[:, t].T).nnz == 0
 
   A[N2_start:, M2_start, T2_start:] = sparse_lateral_slice
   sparse_lateral_slice = sparse_lateral_slice.todok()
-  assert (A[N2_start:, M2_start, T2_start:]._slices[:, 0, :] ==
-          sparse_lateral_slice).all()
+  slices = A[N2_start:,M2_start,T2_start:]._slices
+  for i,slice_t in enumerate(slices):
+    assert slice_t == sparse_lateral_slice[:,i]
 
   A[N2_start:, M2_start:, T2_start] = sparse_frontal_slice
   assert (A[N2_start:, M2_start:, T2_start] == sparse_frontal_slice).all()
@@ -551,7 +556,6 @@ def test_squeeze_warnings():
   with pytest.warns(RuntimeWarning):
     A.squeeze()
 
-
 def test_squeeze_errors():
   T = Tensor()
 
@@ -587,7 +591,6 @@ def test_twist():
   A2 = Tensor(slices2)
   A3 = Tensor(slices3)
   A4 = Tensor(slices4)
-
   B = A.twist(A)
   B2 = A.twist(A2)
   B3 = A.twist(A3)
@@ -792,7 +795,7 @@ def test_frobenius_norm():
 '''-----------------------------------------------------------------------------
                               __add__/__sub__ tests
 -----------------------------------------------------------------------------'''
-def test__add__and__sub__():
+def test__add__and__sub__sparse():
   A, slices1 = set_up_tensor(N, M, T)
   B, slices2 = set_up_tensor(N, M, T)
 
@@ -806,10 +809,25 @@ def test__add__and__sub__():
   D = A - B
   for t in range(T):
     assert (C._slices[t] - summed_slices[t]).nnz == 0
-    print D._slices[t]
-    print "gap"
-    print subtracted_slices[t]
     assert (D._slices[t] - subtracted_slices[t]).nnz == 0
+
+def test__add__and__sub__dense():
+  A, slices1 = set_up_tensor(N, M, T,dense=True)
+  B, slices2 = set_up_tensor(N, M, T,dense=True)
+
+  summed_slices = slices1 + slices2
+  subtracted_slices = slices1 - slices2
+
+  C = A + B
+  D = A - B
+
+  assert C == Tensor(summed_slices)
+  assert D == Tensor(subtracted_slices)
+
+def test_add__and_sub__crossed():
+  A, slices1 = set_up_tensor(N, M, T,dense=True)
+  B, slices2 = set_up_tensor(N, M, T)
+
 
 
 def test__add__and__sub__errors():
@@ -968,6 +986,42 @@ def test_zeros_errors():
     Te.zeros([1, 'apple',3])
 
 '''-----------------------------------------------------------------------------
+                              random tensor tests
+-----------------------------------------------------------------------------'''
+def test_random():
+  #test dense case
+  A = Te.random((N,M,T),format='dense',random_state=1)
+
+  assert A.shape == (N,M,T)
+  assert A._slice_format == 'dense'
+  assert A.find_max() < 1
+  assert (-A).find_max() <= 0
+
+  #test sparse case
+  density = .5
+  A = Te.random([N,M,T],format='dok',random_state=1,density=density)
+
+  assert A.shape == (N,M,T)
+  assert A._slice_format == 'dok'
+  assert A.find_max() < 1
+  assert (-A).find_max() <= 0
+  assert reduce(lambda x,y: x + y.nnz, A._slices,0) == density*N*M*T
+
+
+
+def test_random_errors():
+
+  with pytest.raises(ValueError):
+    A = Te.random([1,2,3,4])
+    A = Te.random((1,2,3,4))
+    A = Te.random((1,2))
+    A = Te.random([1,2])
+
+  with pytest.raises(TypeError):
+    A = Te.random('blah')
+
+
+'''-----------------------------------------------------------------------------
                               empty tensor tests
 -----------------------------------------------------------------------------'''
 def test_empty():
@@ -1013,4 +1067,4 @@ def test_empty_errors():
     Te.empty((1,2,3,4))
 
 if __name__ == '__main__':
-  test_dense_normalize()
+  test__set_item__sparse_tensor_slice()
