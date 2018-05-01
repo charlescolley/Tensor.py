@@ -1535,7 +1535,6 @@ def random(shape,density = 0.1,dtype = 'float64' ,format='coo',
   else:
     raise TypeError("shape must be either a list or tuple of length 3.")
 
-
 def normalize(X,return_sparse_a = False):
   '''
   This function takes in a tensor slice and returns a transverse slice a and \
@@ -1645,6 +1644,37 @@ def normalize(X,return_sparse_a = False):
     a = Tensor(A)
 
   return V,a
+
+def identity(N,T, format='csr'):
+  '''
+  This function returns the identity tensor for the t product. The tensor is\
+  comprised of T, N x N frontal slices where the first frontal slice is an nth \
+  order frontal slice, and all the other frontal slices are 0 matrices.
+  :Inputs:
+    N - (int)
+      the order of the frontal slices
+    T - (int)
+      the dimension of the third mode.
+    format - (optional string)
+      the format of the sparse matrices to return, if dense tensor is desired,\
+       pass in 'dense'.
+  :Returns:
+    Identity - (Tensor Instance)
+      a tensor corresponding to the identity tensor over the field and inner \
+      product induced by the t_product.
+  '''
+  if format =='dense':
+    slices = np_zeros((N,N,T))
+    for i in xrange(N):
+      slices[i,i,0] = 1.0
+  else:
+    slices = [sp.identity(N,format=format)]
+    for t in xrange(T-1):
+      slices.append(sp.random(N,N,density=0,format=format))
+
+  return Tensor(slices)
+
+
 
 def sparse_givens_rotation(A,i,j,i_swap,apply = False):
   '''
@@ -1773,7 +1803,6 @@ def MGS(A):
   else:
     raise(TypeError("this function is defined for a tensor instance,\n"
                     " A passed in is of type {}".format(type(A))))
-
 
 if __name__ == '__main__':
   slices = []

@@ -981,9 +981,9 @@ def test_zeros_errors():
 
   #check for invalid shape types
   with pytest.raises(TypeError):
-    Te.zeros([1,2,'apple'])
-    Te.zeros(['apple',2,3])
-    Te.zeros([1, 'apple',3])
+    Te.zeros([1, 2, 'apple'])
+    Te.zeros(['apple', 2, 3])
+    Te.zeros([1, 'apple', 3])
 
 '''-----------------------------------------------------------------------------
                               random tensor tests
@@ -1007,8 +1007,6 @@ def test_random():
   assert (-A).find_max() <= 0
   assert reduce(lambda x,y: x + y.nnz, A._slices,0) == density*N*M*T
 
-
-
 def test_random_errors():
 
   with pytest.raises(ValueError):
@@ -1019,7 +1017,6 @@ def test_random_errors():
 
   with pytest.raises(TypeError):
     A = Te.random('blah')
-
 
 '''-----------------------------------------------------------------------------
                               empty tensor tests
@@ -1066,5 +1063,23 @@ def test_empty_errors():
     Te.empty((1,2))
     Te.empty((1,2,3,4))
 
+'''-----------------------------------------------------------------------------
+                              indentity tensor tests
+-----------------------------------------------------------------------------'''
+def test_identity():
+  #dense case
+  A, _ = set_up_tensor(N,M,T,format='csr')
+  I = Te.identity(N, T, format='dense')
+  assert (I * A).is_equal_to_tensor(A,ERROR_TOL)
+  I = Te.identity(M, T, format='dense')
+  assert (A * I).is_equal_to_tensor(A,ERROR_TOL)
+
+  #sparse case
+  I = Te.identity(N, T)
+  assert (I * A).is_equal_to_tensor(A,ERROR_TOL)
+  I = Te.identity(M, T)
+  assert (A * I).is_equal_to_tensor(A,ERROR_TOL)
+
+
 if __name__ == '__main__':
-  test__set_item__sparse_tensor_slice()
+  test_identity()
