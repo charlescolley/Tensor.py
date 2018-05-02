@@ -206,11 +206,11 @@ def test__get_item__slice():
   assert (A[i, j:, k:]._slices[0, :, :] == dense_slices[i, j:, k:]).all()
   assert (A[i:, j:, k] == dense_slices[i:, j:, k]).all()
 
-  assert all(map(lambda (x,y): not any(x != y[i:,j]), \
+  assert all(map(lambda (x,y): (x != y[i:,j]).nnz == 0, \
             zip(B[i:,j,k:]._slices,sparse_slices[k:])))
-  assert all(map(lambda (x,y): all((x == y[i,j:]).data), \
+  assert all(map(lambda (x,y): (x != y[i,j:]).nnz == 0, \
             zip(B[i,j:,k:]._slices,sparse_slices[k:])))
-  assert all((B[i:,j:,k] == sparse_slices[k][i:,j:]).data)
+  assert (B[i:,j:,k] != sparse_slices[k][i:,j:]).nnz == 0
 
 def test__get_item__subtensor():
   A, dense_slices = set_up_tensor(N,M,T,dense=True)
@@ -364,20 +364,16 @@ def test__set_item__sparse_tensor_slice():
   slices = A[N2_start, M2_start:, T2_start:]._slices
   sparse_transverse_slice = sparse_transverse_slice.todok()
   for (t, slice) in enumerate(slices):
-    print slice
-    print 'blah'
-    print sparse_transverse_slice[:,t].T
-    print slice != sparse_transverse_slice[:,t].T
     assert (slice != sparse_transverse_slice[:, t].T).nnz == 0
 
   A[N2_start:, M2_start, T2_start:] = sparse_lateral_slice
   sparse_lateral_slice = sparse_lateral_slice.todok()
   slices = A[N2_start:,M2_start,T2_start:]._slices
   for i,slice_t in enumerate(slices):
-    assert slice_t == sparse_lateral_slice[:,i]
+    assert (slice_t != sparse_lateral_slice[:,i]).nnz == 0
 
   A[N2_start:, M2_start:, T2_start] = sparse_frontal_slice
-  assert (A[N2_start:, M2_start:, T2_start] == sparse_frontal_slice).all()
+  assert (A[N2_start:, M2_start:, T2_start] != sparse_frontal_slice).nnz == 0
 
 
 def test__set_item_general_errors():
@@ -878,7 +874,6 @@ def test_find_max():
   A[0,0,0] = 2
   B[0,0,0] = 2
   C[0,0,0] = 2
-
 
   assert A.find_max() == 2
   assert B.find_max() == 2

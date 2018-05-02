@@ -589,6 +589,7 @@ class Tensor:
           A[key[0], start2 + i * step2, start3 + step3 * j] = v
       else:
         def assign(A, i, j, v):
+          print start2,step2,start3,step3,i,j,v,len(A)
           A[start3 + step3 * j][key[0], start2 + i * step2] = v
 
     #zero out the elements not being set
@@ -602,27 +603,26 @@ class Tensor:
             assign(self._slices, i, j, 0)
         else:
           slice_t = self._slices[key[2]][key[0], key[1]].tocoo()
-          for (i, j) in izip(slice_t, row, slice_t.col):
+          for (i, j) in izip(slice_t.row, slice_t.col):
             assign(self._slices, i, j, 0)
       else:
-        (start,stop,step) = key[2].indices(T)
         if self._slice_format == 'dok':
-          for t in xrange((stop-start)/step):
+          for (k,t) in enumerate(xrange(*key[2].indices(T))):
             if isinstance(key[1], int):
               for (i, _) in self._slices[t][key[0], key[1]].iterkeys():
-                assign(self._slices, i, t, 0)
-            else:
+                assign(self._slices, i, k, 0)
+            else:#assumed key[0] is int
               for (_, j) in self._slices[t][key[0], key[1]].iterkeys():
-                assign(self._slices, j, t, 0)
+                assign(self._slices, j, k, 0)
         else:
-          for t in xrange((stop - start)/step):
+          for (k,t) in enumerate(xrange(*key[2].indices(T))):
             slice_t = self._slices[t][key[0], key[1]].tocoo()
             if isinstance(key[1], int):
               for i in slice_t.row:
-                assign(self._slices, i, t, 0)
+                assign(self._slices, i, k, 0)
             else:
               for j in slice_t.col:
-                assign(self._slices, j, t, 0)
+                assign(self._slices, j, k, 0)
 
     #set the non-zero values
     if slices.format == 'dok':
