@@ -955,16 +955,35 @@ def test_dense_normalize():
                               zero tensor tests
 -----------------------------------------------------------------------------'''
 def test_zeros():
+  #sparse case
   Z1 = Te.zeros((N, M, T))
   Z2 = Te.zeros([N, M, T])
   Z3 = Te.zeros([N, M, T], format = 'dok')
   Z4 = Te.zeros((N, M, T), format='lil')
+
+  assert Z1.shape == (N,M,T)
+  assert Z2.shape == (N,M,T)
+  assert Z3.shape == (N,M,T)
+  assert Z4.shape == (N,M,T)
 
   for t in range(T):
     assert Z1[t].nnz == 0
     assert Z2[t].nnz == 0
     assert Z3[t].nnz == 0
     assert Z4[t].nnz == 0
+
+  #dense case
+  Z5 = Te.zeros((N,M,T),format='dense')
+  Z6 = Te.zeros([N,M,T],format='dense')
+
+  assert Z5.shape == (N,M,T)
+  assert Z6.shape == (N,M,T)
+
+  for i in xrange(N):
+    for j in xrange(M):
+      for k in xrange(T):
+        assert Z5[i,j,k] == 0
+        assert Z6[i,j,k] == 0
 
 def test_zeros_errors():
 
@@ -1064,7 +1083,7 @@ def test_empty_errors():
     Te.empty((1,2,3,4))
 
 '''-----------------------------------------------------------------------------
-                              indentity tensor tests
+                              identity tensor tests
 -----------------------------------------------------------------------------'''
 def test_identity():
   #dense case

@@ -74,10 +74,11 @@ class Tensor:
       Class utilization
         zeros
         empty
+        random
+        identity
         normalize                      UNTESTED
 
     TODO: -write a reshape function
-          -write random Tensor
           -write print overloading
           -add in non-zero count private element?
           -add in complex mode
@@ -1428,7 +1429,8 @@ def zeros(shape, dtype = None,format = 'coo'):
       a list or tuple with the dimensions of each of the 3 modes. must be of \
       length 3.
     format - (string)
-      the format of the sparse matrices to produce, default is COO.
+      the format of the sparse matrices to produce, default is COO. If a \
+      dense tensor is desired, pass in 'dense' for the value of format.
   :Returns:
     Zero_Tensor - (Tensor Instance)
       an instance of a Tensor of the appropriate dimensions with all zeros.
@@ -1440,9 +1442,12 @@ def zeros(shape, dtype = None,format = 'coo'):
         if not isinstance(shape[i],int):
           raise TypeError("mode {} dimension must be an integer,\n dimension "
                            "passed in is of type {}\n".format(i,type(i)))
-      slices = []
-      for t in range(shape[2]):
-        slices.append(sp.random(shape[0],shape[1],density=0,format=format))
+      if format =='dense':
+        slices = np_zeros(shape)
+      else:
+        slices = []
+        for t in xrange(shape[2]):
+          slices.append(sp.random(shape[0],shape[1],density=0,format=format))
       return Tensor(slices)
     else:
       raise ValueError("shape must be of length 3.\n")
@@ -1673,8 +1678,6 @@ def identity(N,T, format='csr'):
       slices.append(sp.random(N,N,density=0,format=format))
 
   return Tensor(slices)
-
-
 
 def sparse_givens_rotation(A,i,j,i_swap,apply = False):
   '''
