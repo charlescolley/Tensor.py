@@ -283,8 +283,8 @@ class Tensor:
     '''
     if len(slices.shape) == 1: #assumed to be a tubal scalar
       T = slices.shape[0]
-      if key:
-        if len(key) == 1:
+      if key is not None:
+        if isinstance(key,slice) or isinstance(key,int):
           raise ValueError("key must be at least length 2 to identify which "
                            "tubal scalar to set\n")
         else:
@@ -325,7 +325,7 @@ class Tensor:
         self._slice_format = 'dense'
     elif len(slices.shape) == 2:
       (N,T) = slices.shape
-      if key:
+      if key is not None:
         if len(key) == 1: #assumed to be a frontal slice
           if self._slice_format == 'dense':
             self._slices[:,:,key] = slices
@@ -378,7 +378,7 @@ class Tensor:
           self.shape = (1,N,T)
           self._slice_format = 'dense'
     else:
-      if key:
+      if key is not None:
         if len(key) == 1:
           if self._slice_format == 'dense':
             self._slices[:,:,key] = slices
@@ -430,12 +430,12 @@ class Tensor:
 
     #tubal scalars must be set with dense arrays
     if sp.issparse(slices):
-      if key:
+      if key is not None:
         (N,M,T) = self.shape
         if len(key) == 1:
           if isinstance(key,int):
             if self._slice_format == 'dense':
-              self._slices[:,:,key] = np_zeros((N,M))
+              self._slices[:,:,key] = 0
               def assign(A,i,j,v):
                 A[i,j,key] = v
             else:
@@ -516,7 +516,7 @@ class Tensor:
         self._slices = new_slices
         self._slice_format = slices.format
     else:
-      if key:
+      if key is not None:
         T = self.shape[2]
         if len(key) == 1:
           if isinstance(key,int):
@@ -654,7 +654,8 @@ class Tensor:
       value = array(value)
 
     if isinstance(value,ndarray):
-      if len(value.shape) == 2 and isinstance(key[0],int):
+      if len(value.shape) == 2 and \
+        (isinstance(key,int) or isinstance(key[0],int)):
         self._set_ndarray_as_slices(value,lateral=False,key=key)
       else:
         self._set_ndarray_as_slices(value,key=key)
@@ -671,7 +672,8 @@ class Tensor:
       #recurse on slices if Tensor passed in
       self.__setitem__(key,value._slices)
     elif sp.issparse(value):
-      if len(value.shape) == 2 and isinstance(key[0],int):
+      if len(value.shape) == 2 and \
+          (isinstance(key,int) or isinstance(key[0],int)):
         self._set_sparse_matrices_as_slices(value,lateral=False,key=key)
       else:
         self._set_sparse_matrices_as_slices(value,key=key)
@@ -1457,6 +1459,7 @@ def empty(shape, sparse = False):
   This function takes in a list or tuple of three elements, and an optional\
   bool and returns a tensor with either no elements, or no initialized \
   elements depending on whether the Tensor is requested to be sparse or not.
+
   :Input:
     shape - (list or tuple of ints)
       a list or tuple of length 3 which indicates the shape of the tensor to \
@@ -1468,6 +1471,7 @@ def empty(shape, sparse = False):
   :Returns:
     (Tensor)
       an instance of a tensor.
+
   '''
   if isinstance(shape,list) or isinstance(shape,tuple):
     if len(shape) == 3:
@@ -1655,6 +1659,7 @@ def identity(N,T, format='csr'):
   This function returns the identity tensor for the t product. The tensor is\
   comprised of T, N x N frontal slices where the first frontal slice is an nth \
   order frontal slice, and all the other frontal slices are 0 matrices.
+
   :Inputs:
     N - (int)
       the order of the frontal slices
@@ -1667,6 +1672,7 @@ def identity(N,T, format='csr'):
     Identity - (Tensor Instance)
       a tensor corresponding to the identity tensor over the field and inner \
       product induced by the t_product.
+
   '''
   if format =='dense':
     slices = np_zeros((N,N,T))
@@ -1809,11 +1815,9 @@ def MGS(A):
 
 if __name__ == '__main__':
   slices = []
-  for i in range(25):
-    slices.append(sp.random(500,500,density=.5,format='dok'))
-
+  for i in range(3):
+    slices.append(sp.random(5,5,format='dok'))
   A = Tensor(slices)
 
-  Q,R = MGS(A)
-
-  print (A - Q * R).frobenius_norm()/A.frobenius_norm()
+  x = sp.random(2,2,format='dok')
+  A[0] = x
