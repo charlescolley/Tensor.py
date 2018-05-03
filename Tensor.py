@@ -326,7 +326,7 @@ class Tensor:
     elif len(slices.shape) == 2:
       (N,T) = slices.shape
       if key is not None:
-        if len(key) == 1: #assumed to be a frontal slice
+        if isinstance(key,int):
           if self._slice_format == 'dense':
             self._slices[:,:,key] = slices
           else:
@@ -379,7 +379,7 @@ class Tensor:
           self._slice_format = 'dense'
     else:
       if key is not None:
-        if len(key) == 1:
+        if isinstance(key,int) or isinstance(key,slice):
           if self._slice_format == 'dense':
             self._slices[:,:,key] = slices
           else:
@@ -432,7 +432,7 @@ class Tensor:
     if sp.issparse(slices):
       if key is not None:
         (N,M,T) = self.shape
-        if len(key) == 1:
+        if isinstance(key,int) or isinstance(key,slice):
           if isinstance(key,int):
             if self._slice_format == 'dense':
               self._slices[:,:,key] = 0
@@ -518,12 +518,11 @@ class Tensor:
     else:
       if key is not None:
         T = self.shape[2]
-        if len(key) == 1:
-          if isinstance(key,int):
-            self._matrix_set_helper((slice(None),slice(None),key),slices[0])
-          else:
-            for (i,t) in enumerate(xrange(*key.indices(T))):
-              self._matrix_set_helper((slice(None),slice(None),t),slices[i])
+        if isinstance(key,int):
+          self._matrix_set_helper((slice(None),slice(None),key),slices[0])
+        elif isinstance(key,slice):
+          for (i,t) in enumerate(xrange(*key.indices(T))):
+            self._matrix_set_helper((slice(None),slice(None),t),slices[i])
         elif len(key) == 2:
           if isinstance(key[0],int) and isinstance(key[1],int):
             raise ValueError("inefficient to set tubal scalars with list of "
