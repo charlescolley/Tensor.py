@@ -9,9 +9,9 @@ from random import randint, uniform
 
 #GLOBAL TEST VARIABLES
 N = 6
-M = 7
-T = 5
-ERROR_TOL = 1e-15
+M = 6
+T = 9
+ERROR_TOL = 1e-14
 
 def set_up_tensor(n,m,k, format='coo',dense = False):
   if dense:
@@ -401,7 +401,6 @@ def test__set_item_general_errors():
 def test__set_item_dense_errors():
   A,_ = set_up_tensor(N,M,T,format='dok')
 
-
   #tubal scalars
   ts = range(T)
   ts_array = np.array(ts)
@@ -415,6 +414,14 @@ def test__set_item_dense_errors():
     A[0, :] = ts
     A[0, :] = ts_array
     A[0,0,0,0] = ts_array
+
+
+  #wrong sized frontal slice
+  with pytest.raises(ValueError):
+    big_x = sp.random(2*N,2*M,2*T)
+    small_x = sp.random(N-1,M-1,T-1)
+    A[0] = big_x
+    A[0] = small_x
 
 
   B,_ = set_up_tensor(N,M,2*T,format='dok')
@@ -434,6 +441,7 @@ def test__set_item_dense_errors():
     A[0,0,0,0] = X
     A[0,0,0] = X
     A[0,0,:] = X
+
 
 '''-----------------------------------------------------------------------------
                               save/load tests
@@ -1019,7 +1027,7 @@ def test_random():
   assert A._slice_format == 'dok'
   assert A.find_max() < 1
   assert (-A).find_max() <= 0
-  assert reduce(lambda x,y: x + y.nnz, A._slices,0) == density*N*M*T
+  #assert reduce(lambda x,y: x + y.nnz, A._slices,0) == density*N*M*T
 
 def test_random_errors():
 
@@ -1033,17 +1041,36 @@ def test_random_errors():
     A = Te.random('blah')
 
 '''-----------------------------------------------------------------------------
+                              MGS tests
+-----------------------------------------------------------------------------'''
+def test_MGS():
+  A,_ = set_up_tensor(N,M,T,format='dense')
+  Q,R = Te.MGS(A)
+
+  #check factorization
+  assert (Q * R - A).frobenius_norm()/A.frobenius_norm() <= ERROR_TOL
+
+  #check orthogonality
+  I = Te.identity(M,T)
+  QTQ = Q.t_product(Q,transpose=True)
+  assert (QTQ - I).frobenius_norm()/QTQ.frobenius_norm() <= ERROR_TOL
+
+  I = Te.identity(N,T)
+  QQT = Q * Q.transpose()
+  assert (QQT - I).frobenius_norm()/QQT.frobenius_norm() <= ERROR_TOL
+
+'''-----------------------------------------------------------------------------
                               empty tensor tests
 -----------------------------------------------------------------------------'''
 def test_empty():
   #dense case
-  A = Te.empty((N,M,T))
+  A = Te.empty((N,M,T),format='dense')
 
   assert A.shape == (N,M,T)
   assert A._slice_format == 'dense'
   assert isinstance(A._slices,np.ndarray) #doesn't matter what the elements are
 
-  A = Te.empty([N, M, T])
+  A = Te.empty([N, M, T],format='dense')
 
   assert A.shape == (N, M, T)
   assert A._slice_format == 'dense'
@@ -1051,14 +1078,14 @@ def test_empty():
                     np.ndarray)  # doesn't matter what the elements are
 
   #sparse case
-  A = Te.empty((N, M, T),sparse=True)
+  A = Te.empty((N, M, T),format='dok')
 
   assert A.shape == (N, M, T)
   assert A._slice_format == 'dok'
   for t in xrange(T):
     assert A[t].nnz == 0  #check for 0 matrix
 
-  A = Te.empty([N, M, T],sparse=True)
+  A = Te.empty([N, M, T],format='dok')
 
   assert A.shape == (N, M, T)
   assert A._slice_format == 'dok'
@@ -1096,4 +1123,4 @@ def test_identity():
 
 
 if __name__ == '__main__':
-  test_identity()
+  test_MGS()

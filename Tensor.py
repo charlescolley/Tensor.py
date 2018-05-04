@@ -76,7 +76,9 @@ class Tensor:
         empty
         random
         identity
-        normalize                      UNTESTED
+        normalize
+        MGS
+
 
     TODO: -write a reshape function
           -write print overloading
@@ -176,7 +178,7 @@ class Tensor:
             else:
               new_slices = deepcopy(self._slices)
               if other._slice_format == 'dok':
-                for t in xrange(self._shape[2]):
+                for t in xrange(self.shape[2]):
                   for ((i,j),v) in other._slices[t].iteritems():
                     new_slices[i,j,t] -= v
               else:
@@ -432,8 +434,9 @@ class Tensor:
     if sp.issparse(slices):
       if key is not None:
         (N,M,T) = self.shape
-        if isinstance(key,int) or isinstance(key,slice):
-          if isinstance(key,int):
+        if isinstance(key,int):
+          if self.shape[0] == slices.shape[0]\
+            and self.shape[1] ==  slices.shape[1]:
             if self._slice_format == 'dense':
               self._slices[:,:,key] = 0
               def assign(A,i,j,v):
@@ -444,9 +447,13 @@ class Tensor:
               def assign(A,i,j,v):
                 A[key][i,j] = v
           else:
-            raise ValueError("cannot assign a matrix to a single slice. Keys "
-                            "of length 1 are assumed to refer to frontal "
-                            "slices.\n")
+            raise ValueError("cannot assign a matrix of shape {} to tensor "
+                             "frontal slice of shape {}"\
+                             .format(slices.shape,self.shape[:2]))
+        elif isinstance(key,slice):
+          raise ValueError("cannot assign a matrix to a single slice. Keys "
+                          "of length 1 are assumed to refer to frontal "
+                          "slices.\n")
         elif len(key) == 2:
           (start,stop,step) = (0,0,0) #initialize for existance after if statement
           if isinstance(key[0], int) and isinstance(key[1], slice): #transverse
@@ -825,13 +832,13 @@ class Tensor:
       raise ValueError('shape must be at most length 3, shape is of length {'
                        '}'.format(len(shape)))
     prod = lambda list: reduce(lambda x,y: x*y,list)
-    if prod(shape) != prod(self._shape):
+    if prod(shape) != prod(self.shape):
       raise ValueError("cannot reshape Tensor with {} entries into shape {}".
-                       format(prod(self._shape),shape))
+                       format(prod(self.shape),shape))
 
     if self._slice_format == 'dense':
       self._slices.reshape(shape,order)
-      self._shape = shape
+      self.shape = shape
     else:
       raise NotImplementedError("resize needs to have the sparse case finished")
 
@@ -871,17 +878,17 @@ class Tensor:
           for i in xrange(N):
             for j in xrange(i):
               temp_val = self._slices[i,j,t]
-              self._slices[i,j,t] = self.self._slices[j,i,-t%T]
+              self._slices[i,j,t] = self._slices[j,i,-t%T]
               self._slices[j,i,-t%T] = temp_val
 
               temp_val = self._slices[j,i,t]
-              self._slices[j,i, t] = self.self._slices[i, j, -t % T]
-              self._slices[i, j, -t % T] = temp_val
+              self._slices[j,i, t] = self._slices[i, j, -t % T]
+              self._slices[i,j,-t % T] = temp_val
 
           #handle diagonals
           for i in xrange(N):
             temp_val = self._slices[i,i,t]
-            self._slices[i,i,T] = self._slices[i,i,-t%T]
+            self._slices[i,i,t] = self._slices[i,i,-t%T]
             self._slices[i,i,-t%T] = temp_val
 
         #handle middle slice if one exists
@@ -1078,7 +1085,7 @@ class Tensor:
           new_slices = map(lambda x:x.asformat(self._slice_format),new_slices)
 
       self._slices = new_slices
-      self._shape = (self.shape[0],self.shape[2],self.shape[1])
+      self.shape = (self.shape[0],self.shape[2],self.shape[1])
 
   def t_product(self,B,transpose = False):
     '''
@@ -1453,7 +1460,7 @@ def zeros(shape, dtype = None,format = 'coo'):
     else:
       raise ValueError("shape must be of length 3.\n")
 
-def empty(shape, sparse = False):
+def empty(shape, format = 'dok'):
   '''
   This function takes in a list or tuple of three elements, and an optional\
   bool and returns a tensor with either no elements, or no initialized \
@@ -1463,10 +1470,11 @@ def empty(shape, sparse = False):
     shape - (list or tuple of ints)
       a list or tuple of length 3 which indicates the shape of the tensor to \
       instantiate.
-    sparse - (optional bool)
-      a boolean indicating whether or not to create a sparse tensor. Note \
-      that when a sparse tensor is chosen, it will be equivalent to a zero \
-      tensor. Format returned is dok to ensure ease of setting elements.
+    format - (optional string)
+      a string indicating how to format the tensor, all scipy sparse arrays \
+      are supported, and format can be set to 'dense' to return a ndarray. \
+      Note that when a sparse tensor is chosen, it will be equivalent to a \
+      zero tensor. default format is dok to ensure ease of setting elements.
   :Returns:
     (Tensor)
       an instance of a tensor.
@@ -1477,12 +1485,12 @@ def empty(shape, sparse = False):
       if shape[2] == 1:
         raise ValueError("3rd mode cannot be of length 1.\n")
       else:
-        if sparse:
+        if format == "dense":
+          slices = np_empty(shape)
+        else:
           slices = []
           for t in xrange(shape[2]):
-            slices.append(sp.dok_matrix((shape[0],shape[1])))
-        else:
-          slices = np_empty(shape)
+            slices.append(sp.random(shape[0],shape[1],density=0,format=format))
         return Tensor(slices)
     else:
       raise ValueError("shape must be of length 3 to create an instance of a "
@@ -1799,9 +1807,9 @@ def MGS(A):
     (N, M, T) = A.shape
     V = Tensor(deepcopy(A._slices))
     Q = empty(A.shape)
-    R = empty((N,N,T))
+    R = empty((M,M,T))
 
-    for i in xrange(N):
+    for i in xrange(M):
       Q[:,i,:], R[i,i] = normalize(V[:,i,:])
       for j in xrange(M):
         R[i,j] = Q[:,i,:].t_product(V[:,j,:],transpose=True)
