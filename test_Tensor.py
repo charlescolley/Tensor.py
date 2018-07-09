@@ -6,6 +6,7 @@ import Tensor as Te
 import pytest
 from tempfile import NamedTemporaryFile
 from random import randint, uniform
+from copy import deepcopy
 
 #GLOBAL TEST VARIABLES
 N = 6
@@ -21,7 +22,7 @@ def set_up_tensor(n,m,k, format='coo',dense = False):
     for t in range(k):
       slices.append(sp.random(n,m,density=.5,format = format))
 
-  return Tensor(slices), slices
+  return Tensor(deepcopy(slices)), slices
 
 
 '''-----------------------------------------------------------------------------
@@ -61,7 +62,7 @@ def test_non_empty_valid_constructor():
   assert A.shape[1] == M
   assert A.shape[2] == T
 
-  assert A._slices == slices
+  assert all(map(lambda (x,y): (x - y).nnz == 0,zip(A._slices,slices)))
 
 #case where slices are different sizes
 def test_invalid_slices_constructors():
@@ -493,6 +494,8 @@ def test_sparse_transpose():
 
 def test_dense_transpose():
   A, slices = set_up_tensor(N,M,T,dense=True)
+
+  print A._slices[:,:,0]
   B = A.transpose()
   A.transpose(inPlace=True)
 
@@ -500,6 +503,8 @@ def test_dense_transpose():
   assert B.shape == (M,N,T)
 
   for t in range(T):
+    print A._slices[:,:,t]
+    print slices[:,:,-t%T].T
     assert (A._slices[:,:,t] == slices[:,:,-t%T].T).all()
     assert (B._slices[:,:,t] == slices[:,:,-t%T].T).all()
 
@@ -930,8 +935,8 @@ def test_scale_tensor():
   for i in range(N):
     for j in range(M):
       for t in range(T):
-        assert C._slices[i, j, t] == slices2[i, j, t]
-        assert D._slices[i, j, t] == slices2[i, j, t]
+        assert C._slices[i, j, t] == scalar*slices2[i, j, t]
+        assert D._slices[i, j, t] == scalar*slices2[i, j, t]
 
 
 def test_scale_tensor_errors():
@@ -1044,7 +1049,7 @@ def test_random_errors():
                               MGS tests
 -----------------------------------------------------------------------------'''
 def test_MGS():
-  A,_ = set_up_tensor(N,M,T,format='dense')
+  A,_ = set_up_tensor(N,M,T,dense=True)
   Q,R = Te.MGS(A)
 
   #check factorization

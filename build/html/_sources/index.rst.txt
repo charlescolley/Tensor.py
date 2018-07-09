@@ -7,12 +7,12 @@ Welcome to T_Tensor's documentation!
 ====================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
    :caption: Contents
 
-.. automodule:: Tensor
-  :members:	  
-
+   T_Tensor_doc
+   tutorial
+	     
 Indices and tables
 ==================
 
